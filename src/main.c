@@ -12,7 +12,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#define TAM_EDIT_VERSION "0.1.0-c11"
+/* Injected by the Makefile from its VERSION variable. */
+#ifndef TAM_EDIT_VERSION
+#define TAM_EDIT_VERSION "0.0.0-unknown"
+#endif
 
 static volatile sig_atomic_t g_resized;
 static volatile sig_atomic_t g_stop;

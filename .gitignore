@@ -1,26 +1,9 @@
-.DS_Store
-
-micro
-micro.exe
-!cmd/micro
-tam-edit
-tam-edit.exe
-!cmd/tam-edit
-binaries/
-tmp.sh
-test/
-.idea/
-packages/
-todo.txt
-test.txt
-log.txt
-*.old
-benchmark_results*
-tools/build-version
-tools/build-date
-tools/info-plist
-tools/vscode-tests/
-*.hdr
-
 # C11 build output
 /build/
+
+# Go builds drop the binary in the repository root
+/tam-edit
+/tam-edit.exe
+
+# Scratch inputs and output for the retained buffer-test generator
+/tools/vscode-tests/

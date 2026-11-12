@@ -2,17 +2,17 @@
 
 **Last update:** 2026-11-12
 **Owner:** Fred
-**Status:** Milestone 1 complete: a minimal editor builds and runs
+**Status:** version 0.0.1, before the first milestone: a minimal editor builds and runs
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
 This roadmap describes how tam-edit moves from Go to C11 and links only
 `libtam` and libc. It is milestone-based, not date-based. The Go version stays
-usable on `master` until the C version reaches the v1 parity gate.
+usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
 
-**2026-11-12 — milestone 1 (first runnable editor).** `make` builds
+**2026-11-12 — version 0.0.1 (first runnable editor).** `make` builds
 `build/tam-edit`, which links only libc and libtam 0.7.0. It opens a file,
 edits UTF-8 text (arrows, Home, End, PageUp, PageDown, Enter, Tab,
 Backspace, Delete), saves with Ctrl-S, quits with Ctrl-Q, shows a status line
@@ -26,8 +26,10 @@ highlighting, colorschemes, INI settings, mouse, clipboard and the micro
 config importer. The Go tree is still on this branch and on `master`; it is
 not built by the new Makefile and is removed once later phases land.
 
-Libtam 0.7.0 supplies `tam_uni`, `tam_key` and `tam_tty`. Phase 0 scaffolding
-and the document/editing core of Phase 2 are the parts delivered so far.
+Libtam 0.7.0 supplies `tam_uni`, `tam_key` and `tam_tty`; `tam_regex`, which
+Phase 1 also requires, is not there yet. Phase 0 scaffolding and the
+document/editing core of Phase 2 are the parts delivered so far, so no milestone
+is complete and the version stays in 0.0.x.
 
 ## 1. Goal and non-goals
 
@@ -62,6 +64,7 @@ Deferred work is listed in section 9, not dropped.
 | Repository | C11 tree on a `c11` branch; `master` stays the Go fork for upstream sync and parity reference |
 | License | GPLv3 for the linked work, retaining micro's MIT copyright and permission notices |
 | Roadmap location | `~/Code/tam-edit` (the existing clone) |
+| Versioning | Semver; the minor names a milestone while pre-1.0, and 1.0.0 is the parity gate. See "Milestones and versions" in section 6 |
 
 ## 3. Starting point
 
@@ -75,9 +78,15 @@ Measured from the Go tree before any C11 work:
 | `internal/config` | 2,449 lines |
 | `internal/display` | 2,180 lines |
 | `internal/lua` | 603 lines |
-| Runtime data | 1.0 MB in 210 files: 158 syntax YAML files, 25 colorschemes, 7 Lua plugins, help pages |
+| Runtime data | Originally 210 files, including 158 syntax YAML files, 25 colorschemes, help pages and 7 Lua plugins |
 | Highlight engine | 986 lines in `pkg/highlight` |
 | External libraries | 18 direct and indirect modules |
+
+The cleanup retains the Go source and tests, syntax definitions, colorschemes,
+help pages and `tools/testgen.go` as porting references. It removes micro's
+release automation, packaging, artwork and bundled Lua plugins. The Go embed
+list matches the retained data; `mise.toml` keeps reference builds reproducible.
+`master` and Git history retain the original material for comparisons.
 
 The existing clone is `~/Code/tam-edit`. `~/Clone` does not exist. The system
 `micro` (Pacman package, `/usr/bin/micro`) stays installed as the behavior
@@ -206,6 +215,38 @@ The build check is simple: `ldd tam-edit` must list libc only, and
 Effort is relative: **S** days, **M** weeks, **L** several weeks, **XL** a
 month or more of focused work. These are sizing hints, not promises.
 
+### Milestones and versions
+
+tam-edit uses semantic versioning, `MAJOR.MINOR.PATCH`. Before 1.0.0 the minor
+number names a milestone, and a milestone is the exit of a phase below. Phases
+may land out of order; the version changes only when a milestone's exit
+criteria hold.
+
+| Milestone | Phases | Version | Exit |
+| --- | --- | --- | --- |
+| — | 0–2 | 0.0.x | Scaffolding, libtam foundation and the document core. Today 0.0.1. |
+| 1 | 3 | 0.1.0 | Daily-usable editor: open, edit, save, quit, no sanitizer findings. |
+| 2 | 4 | 0.2.0 | Views and configuration: splits, tabs, INI, colorschemes, micro import. |
+| 3 | 5 | 0.3.0 | Syntax highlighting for the 158 definitions within the latency target. |
+| 4 | 6 | 0.4.0 | Full non-plugin feature set: shell, file operations, search, encodings. |
+| 5 | 7 | 1.0.0 | Parity gate: audit, fuzzing, packaging, `c11` becomes the default branch. |
+
+Rules:
+
+- `PATCH` increments for fixes and small improvements inside a milestone.
+- `MINOR` increments only at a milestone exit, up to 0.4.0.
+- `1.0.0` is reserved for the parity gate. Nothing reaches 1.0 before the
+  definition of done in section 10 holds and the Go tree is no longer needed.
+- After 1.0.0, `MINOR` adds a capability (an extension from Phase 8) and
+  `PATCH` fixes defects.
+- Release candidates use `-rc.N`, as in `0.1.0-rc.1`. No branch, toolchain or
+  build-count suffix is part of a version; the old `0.1.0-c11` form is dropped.
+- The Makefile's `VERSION` is the single source. It is compiled into the binary,
+  and `tam-edit --version` prints it beside the libtam version.
+- Releases are tagged `vX.Y.Z` on `c11`, later on the default branch. Tags
+  inherited from upstream micro (`v1.x`, `v2.0.x`, `nightly`) describe the Go
+  tree and are not tam-edit releases.
+
 ### Phase 0 — Branch, baseline, and scaffolding (S)
 
 - Create `c11` from `master`; leave `master` untouched as the Go reference.
@@ -309,14 +350,14 @@ complete; each item has a manual test and, where practical, an automated one.
   keybindings; record intentional differences.
 - Fuzzing, ASan and UBSan clean; valgrind clean on the main workflows.
 - Large-file, long-line, many-cursor and many-split stress tests.
-- Packaging: man page renamed from `micro.1`, desktop file, install and
+- Packaging: a man page and desktop file of tam-edit's own, install and
   uninstall targets, pkg-config if useful.
 - GPLv3 `LICENSE`, retained MIT notices, README, acknowledgements and AI
   provenance if the repository is treated as a public Tamlinux project.
 - With Fred's approval, make `c11` the default branch and mark `master` as the
   archived Go reference.
 
-**Exit:** v1.0 tag; the dependency check passes; the Go tree is no longer
+**Exit:** v1.0.0 tag; the dependency check passes; the Go tree is no longer
 required to build, test or use tam-edit.
 
 ### Phase 8 — After v1 (XL, optional)

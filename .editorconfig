@@ -1,6 +1,23 @@
 # See https://editorconfig.org
+root = true
 
-# In Go files we indent with tabs but still 
-# set indent_size to control the GitHub web viewer.  
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{c,h}]
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+# The Go reference tree keeps upstream's formatting.
 [*.go]
-indent_size=4
+indent_style = tab
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false

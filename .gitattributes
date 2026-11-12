@@ -1,2 +1,7 @@
-# Go tools like `gofmt` require LF as line endings
+# Line endings for source files. The C11 editor and the Go reference both build
+# from this tree on different branches.
+*.c text eol=lf
+*.h text eol=lf
 *.go text eol=lf
+*.md text eol=lf
+Makefile text eol=lf

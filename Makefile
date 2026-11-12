@@ -2,7 +2,8 @@ CC ?= cc
 PKG_CONFIG ?= pkg-config
 
 CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
-override CFLAGS += -std=c11 -g -Isrc -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
+override CFLAGS += -std=c11 -g -Isrc -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE \
+	-DTAM_EDIT_VERSION=\"$(VERSION)\"
 LDFLAGS ?=
 
 # libtam is the only library dependency. It is found with pkg-config; add
@@ -11,7 +12,8 @@ LDFLAGS ?=
 LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)
 LIBTAM_LIBS   := $(shell $(PKG_CONFIG) --libs libtam 2>/dev/null)
 
-VERSION := 0.1.0-c11
+# Single source of the version. See "Milestones and versions" in ROADMAP.md.
+VERSION := 0.0.1
 PREFIX ?= $(HOME)/.local/dev
 
 BUILD = build
@@ -28,7 +30,7 @@ all: $(BIN)
 $(BUILD):
 	mkdir -p $(BUILD)
 
-$(BUILD)/%.o: src/%.c | $(BUILD)
+$(BUILD)/%.o: src/%.c Makefile | $(BUILD)
 	@test -n "$(LIBTAM_LIBS)" || { \
 		echo "tam-edit: libtam not found; add its pkg-config directory to PKG_CONFIG_PATH" >&2; \
 		exit 1; }
@@ -37,11 +39,11 @@ $(BUILD)/%.o: src/%.c | $(BUILD)
 $(BIN): $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBTAM_LIBS) -o $@
 
-$(TEST_BIN): $(TEST_SRCS) src/editor.h | $(BUILD)
-	$(CC) $(CFLAGS) $(LIBTAM_CFLAGS) $(TEST_SRCS) $(LIBTAM_LIBS) -o $@
+$(TEST_BIN): $(TEST_SRCS) src/editor.h Makefile | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBTAM_CFLAGS) $(TEST_SRCS) $(LIBTAM_LIBS) -o $@
 
 test: $(TEST_BIN)
-	./$(TEST_BIN)
+	$(abspath $(TEST_BIN))
 
 # The finished binary must not pull in a shared libtam, ncurses or terminfo.
 check-deps: $(BIN)

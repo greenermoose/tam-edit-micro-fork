@@ -56,7 +56,7 @@ var (
 )
 
 func InitFlags() {
-	// Note: keep this in sync with the man page in assets/packaging/micro.1
+	// Reference CLI; the C11 editor's CLI is defined in src/main.c.
 	flag.Usage = func() {
 		fmt.Println("Usage: tam-edit [OPTION]... [FILE]... [+LINE[:COL]] [+/REGEX]")
 		fmt.Println("       tam-edit [OPTION]... [FILE[:LINE[:COL]]]...  (only if the `parsecursor` option is enabled)")
