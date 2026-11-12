@@ -6,15 +6,16 @@ override CFLAGS += -std=c11 -g -Isrc -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE \
 	-DTAM_EDIT_VERSION=\"$(VERSION)\"
 LDFLAGS ?=
 
-# libtam is the only library dependency. It is found with pkg-config; add
-# <prefix>/lib/pkgconfig to PKG_CONFIG_PATH for a prefix outside pkg-config's
-# default search path.
-LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)
-LIBTAM_LIBS   := $(shell $(PKG_CONFIG) --libs libtam 2>/dev/null)
-
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
 VERSION := 0.1.0
 PREFIX ?= $(HOME)/.local/dev
+
+# Look for libtam in $(PREFIX)/lib/pkgconfig if not already in system search path
+export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH))
+
+# libtam is the only library dependency.
+LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)
+LIBTAM_LIBS   := $(shell $(PKG_CONFIG) --libs libtam 2>/dev/null)
 
 BUILD = build
 BIN = $(BUILD)/tam-edit
