@@ -44,7 +44,7 @@ var (
 	flagConfigDir = flag.String("config-dir", "", "Specify a custom location for the configuration directory")
 	flagOptions   = flag.Bool("options", false, "Show all option help")
 	flagDebug     = flag.Bool("debug", false, "Enable debug mode (prints debug info to ./log.txt)")
-	flagProfile   = flag.Bool("profile", false, "Enable CPU profiling (writes profile info to ./micro.prof)")
+	flagProfile   = flag.Bool("profile", false, "Enable CPU profiling (writes profile info to ./tam-edit.prof)")
 	flagPlugin    = flag.String("plugin", "", "Plugin command")
 	flagClean     = flag.Bool("clean", false, "Clean configuration directory")
 	flagExec      multiStringFlag
@@ -58,8 +58,8 @@ var (
 func InitFlags() {
 	// Note: keep this in sync with the man page in assets/packaging/micro.1
 	flag.Usage = func() {
-		fmt.Println("Usage: micro [OPTION]... [FILE]... [+LINE[:COL]] [+/REGEX]")
-		fmt.Println("       micro [OPTION]... [FILE[:LINE[:COL]]]...  (only if the `parsecursor` option is enabled)")
+		fmt.Println("Usage: tam-edit [OPTION]... [FILE]... [+LINE[:COL]] [+/REGEX]")
+		fmt.Println("       tam-edit [OPTION]... [FILE[:LINE[:COL]]]...  (only if the `parsecursor` option is enabled)")
 		fmt.Println("-clean")
 		fmt.Println("    \tClean the configuration directory and exit")
 		fmt.Println("-config-dir dir")
@@ -74,14 +74,14 @@ func InitFlags() {
 		fmt.Println("-debug")
 		fmt.Println("    \tEnable debug mode (enables logging to ./log.txt)")
 		fmt.Println("-profile")
-		fmt.Println("    \tEnable CPU profiling (writes profile info to ./micro.prof")
-		fmt.Println("    \tso it can be analyzed later with \"go tool pprof micro.prof\")")
+		fmt.Println("    \tEnable CPU profiling (writes profile info to ./tam-edit.prof")
+		fmt.Println("    \tso it can be analyzed later with \"go tool pprof tam-edit.prof\")")
 		fmt.Println("-version")
 		fmt.Println("    \tShow the version number and information and exit")
 		fmt.Println("-exec command")
 		fmt.Println("    \tRun a command after the editor initializes (may be repeated)")
 
-		fmt.Print("\nMicro's plugins can be managed at the command line with the following commands.\n")
+		fmt.Print("\nTam-edit's plugins can be managed at the command line with the following commands.\n")
 		fmt.Println("-plugin install [PLUGIN]...")
 		fmt.Println("    \tInstall plugin(s)")
 		fmt.Println("-plugin remove [PLUGIN]...")
@@ -95,11 +95,11 @@ func InitFlags() {
 		fmt.Println("-plugin available")
 		fmt.Println("    \tList available plugins")
 
-		fmt.Print("\nMicro's options can also be set via command line arguments for quick\nadjustments. For real configuration, please use the settings.json\nfile (see 'help options').\n\n")
+		fmt.Print("\nTam-edit's options can also be set via command line arguments for quick\nadjustments. For real configuration, please use the settings.json\nfile (see 'help options').\n\n")
 		fmt.Println("-<option> value")
 		fmt.Println("    \tSet `option` to `value` for this session")
-		fmt.Println("    \tFor example: `micro -syntax off file.c`")
-		fmt.Println("\nUse `micro -options` to see the full list of configuration options")
+		fmt.Println("    \tFor example: `tam-edit -syntax off file.c`")
+		fmt.Println("\nUse `tam-edit -options` to see the full list of configuration options")
 	}
 
 	optionFlags = make(map[string]*string)
@@ -321,7 +321,7 @@ func main() {
 	InitFlags()
 
 	if *flagProfile {
-		f, err := os.Create("micro.prof")
+		f, err := os.Create("tam-edit.prof")
 		if err != nil {
 			log.Fatal("error creating CPU profile: ", err)
 		}
@@ -378,7 +378,7 @@ func main() {
 	err = screen.Init()
 	if err != nil {
 		fmt.Println(err)
-		fmt.Println("Fatal: Micro could not initialize a Screen.")
+		fmt.Println("Fatal: tam-edit could not initialize a Screen.")
 		exit(1)
 	}
 
@@ -395,7 +395,7 @@ func main() {
 			if e, ok := err.(*lua.ApiError); ok {
 				fmt.Println("Lua API error:", e)
 			} else {
-				fmt.Println("Micro encountered an error:", errors.Wrap(err, 2).ErrorStack(), "\nIf you can reproduce this error, please report it at https://github.com/micro-editor/micro/issues")
+				fmt.Println("tam-edit encountered an error:", errors.Wrap(err, 2).ErrorStack(), "\nIf you can reproduce this error, please report it at https://github.com/greenermoose/tam-edit/issues")
 			}
 			// immediately backup all buffers with unsaved changes
 			for _, b := range buffer.OpenBuffers {

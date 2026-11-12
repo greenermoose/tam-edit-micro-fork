@@ -22,18 +22,18 @@ func init() {
 	ulua.L.SetGlobal("import", luar.New(ulua.L, LuaImport))
 }
 
-// LuaImport is meant to be called from lua by a plugin and will import the given micro package
+// LuaImport is meant to be called from lua by a plugin and will import the given package
 func LuaImport(pkg string) *lua.LTable {
 	switch pkg {
-	case "micro":
+	case "tam-edit", "micro":
 		return luaImportMicro()
-	case "micro/shell":
+	case "tam-edit/shell", "micro/shell":
 		return luaImportMicroShell()
-	case "micro/buffer":
+	case "tam-edit/buffer", "micro/buffer":
 		return luaImportMicroBuffer()
-	case "micro/config":
+	case "tam-edit/config", "micro/config":
 		return luaImportMicroConfig()
-	case "micro/util":
+	case "tam-edit/util", "micro/util":
 		return luaImportMicroUtil()
 	default:
 		return ulua.Import(pkg)

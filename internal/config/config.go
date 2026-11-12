@@ -10,14 +10,14 @@ import (
 
 var ConfigDir string
 
-// InitConfigDir finds the configuration directory for micro according to the XDG spec.
+// InitConfigDir finds the configuration directory for tam-edit according to the XDG spec.
 // If no directory is found, it creates one.
 func InitConfigDir(flagConfigDir string) error {
 	var e error
 
-	microHome := os.Getenv("MICRO_CONFIG_HOME")
-	if microHome == "" {
-		// The user has not set $MICRO_CONFIG_HOME so we'll try $XDG_CONFIG_HOME
+	tamHome := os.Getenv("TAM_EDIT_CONFIG_HOME")
+	if tamHome == "" {
+		// The user has not set $TAM_EDIT_CONFIG_HOME so we'll try $XDG_CONFIG_HOME
 		xdgHome := os.Getenv("XDG_CONFIG_HOME")
 		if xdgHome == "" {
 			// The user has not set $XDG_CONFIG_HOME so we should act like it was set to ~/.config
@@ -28,9 +28,9 @@ func InitConfigDir(flagConfigDir string) error {
 			xdgHome = filepath.Join(home, ".config")
 		}
 
-		microHome = filepath.Join(xdgHome, "micro")
+		tamHome = filepath.Join(xdgHome, "tam-edit")
 	}
-	ConfigDir = microHome
+	ConfigDir = tamHome
 
 	if len(flagConfigDir) > 0 {
 		if _, err := os.Stat(flagConfigDir); os.IsNotExist(err) {

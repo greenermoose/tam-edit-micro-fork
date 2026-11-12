@@ -184,7 +184,7 @@ func Init() error {
 
 	// Should we enable true color?
 	truecolor := config.GetGlobalOption("truecolor").(string)
-	if truecolor == "on" || (truecolor == "auto" && os.Getenv("MICRO_TRUECOLOR") == "1") {
+	if truecolor == "on" || (truecolor == "auto" && (os.Getenv("TAM_EDIT_TRUECOLOR") == "1" || os.Getenv("MICRO_TRUECOLOR") == "1")) {
 		os.Setenv("TCELL_TRUECOLOR", "enable")
 	} else if truecolor == "off" {
 		os.Setenv("TCELL_TRUECOLOR", "disable")

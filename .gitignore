@@ -3,6 +3,9 @@
 micro
 micro.exe
 !cmd/micro
+tam-edit
+tam-edit.exe
+!cmd/tam-edit
 binaries/
 tmp.sh
 test/
