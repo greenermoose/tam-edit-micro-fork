@@ -21,3 +21,6 @@ tools/build-date
 tools/info-plist
 tools/vscode-tests/
 *.hdr
+
+# C11 build output
+/build/

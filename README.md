@@ -1,3 +1,8 @@
+> **`c11` branch:** tam-edit is being rewritten in C11 here. The C tree in
+> `src/` builds a minimal editor with `make` and links only libtam and libc;
+> the Go micro tree stays on `master` as the behavior reference. See
+> [ROADMAP.md](ROADMAP.md). The rest of this README describes micro upstream.
+
 <img alt="micro logo" src="./assets/micro-logo-drop.svg" width="500px"/>
 
 ![Test Workflow](https://github.com/micro-editor/micro/actions/workflows/test.yaml/badge.svg)

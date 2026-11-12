@@ -1,79 +1,65 @@
-.PHONY: runtime build generate build-quick
+CC ?= cc
+PKG_CONFIG ?= pkg-config
 
-VERSION = $(shell GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) \
-	go run tools/build-version.go)
-HASH = $(shell git rev-parse --short HEAD)
-DATE = $(shell GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) \
-	go run tools/build-date.go)
-GOBIN ?= $(shell go env GOPATH)/bin
-GOVARS = -X github.com/micro-editor/micro/v2/internal/util.Version=$(VERSION) -X github.com/micro-editor/micro/v2/internal/util.CommitHash=$(HASH) -X 'github.com/micro-editor/micro/v2/internal/util.CompileDate=$(DATE)'
-DEBUGVAR = -X github.com/micro-editor/micro/v2/internal/util.Debug=ON
-VSCODE_TESTS_BASE_URL = 'https://raw.githubusercontent.com/microsoft/vscode/e6a45f4242ebddb7aa9a229f85555e8a3bd987e2/src/vs/editor/test/common/model/'
-CGO_ENABLED := $(if $(CGO_ENABLED),$(CGO_ENABLED),0)
+CFLAGS ?= -O2 -Wall -Wextra -Wpedantic
+override CFLAGS += -std=c11 -g -Isrc -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE
+LDFLAGS ?=
 
-ADDITIONAL_GO_LINKER_FLAGS := ""
-GOHOSTOS = $(shell go env GOHOSTOS)
-ifeq ($(GOHOSTOS), darwin)
-	# Native darwin resp. macOS builds need external and dynamic linking
-	ADDITIONAL_GO_LINKER_FLAGS += $(shell GOOS=$(GOHOSTOS) \
-		GOARCH=$(shell go env GOHOSTARCH) \
-		go run tools/info-plist.go "$(shell go env GOOS)" "$(VERSION)")
-	CGO_ENABLED = 1
-endif
+# libtam is the only library dependency. It is found with pkg-config; add
+# <prefix>/lib/pkgconfig to PKG_CONFIG_PATH for a prefix outside pkg-config's
+# default search path.
+LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)
+LIBTAM_LIBS   := $(shell $(PKG_CONFIG) --libs libtam 2>/dev/null)
 
-build: generate build-quick
+VERSION := 0.1.0-c11
+PREFIX ?= $(HOME)/.local/dev
 
-build-quick:
-	CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags "-s -w $(GOVARS) $(ADDITIONAL_GO_LINKER_FLAGS)" -o tam-edit ./cmd/tam-edit
+BUILD = build
+BIN = $(BUILD)/tam-edit
+TEST_BIN = $(BUILD)/test_editor
+SRCS = src/main.c src/editor.c src/render.c
+OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
+TEST_SRCS = src/editor.c tests/test_editor.c
 
-build-dbg:
-	CGO_ENABLED=$(CGO_ENABLED) go build -trimpath -ldflags "$(ADDITIONAL_GO_LINKER_FLAGS) $(DEBUGVAR)" -o tam-edit ./cmd/tam-edit
+.PHONY: all test clean install uninstall check-deps
 
-build-tags: fetch-tags build
+all: $(BIN)
 
-build-all: build
+$(BUILD):
+	mkdir -p $(BUILD)
 
-install: generate
-	go install -ldflags "-s -w $(GOVARS) $(ADDITIONAL_GO_LINKER_FLAGS)" ./cmd/tam-edit
+$(BUILD)/%.o: src/%.c | $(BUILD)
+	@test -n "$(LIBTAM_LIBS)" || { \
+		echo "tam-edit: libtam not found; add its pkg-config directory to PKG_CONFIG_PATH" >&2; \
+		exit 1; }
+	$(CC) $(CFLAGS) $(LIBTAM_CFLAGS) -MMD -MP -c $< -o $@
 
-install-all: install
+$(BIN): $(OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) $(LIBTAM_LIBS) -o $@
 
-fetch-tags:
-	git fetch --tags --force
+$(TEST_BIN): $(TEST_SRCS) src/editor.h | $(BUILD)
+	$(CC) $(CFLAGS) $(LIBTAM_CFLAGS) $(TEST_SRCS) $(LIBTAM_LIBS) -o $@
 
-generate:
-	GOOS=$(shell go env GOHOSTOS) GOARCH=$(shell go env GOHOSTARCH) go generate ./runtime
+test: $(TEST_BIN)
+	./$(TEST_BIN)
 
-testgen:
-	mkdir -p tools/vscode-tests
-	cd tools/vscode-tests && \
-	curl --remote-name-all $(VSCODE_TESTS_BASE_URL){editableTextModelAuto,editableTextModel,model.line}.test.ts
-	tsc tools/vscode-tests/*.ts > /dev/null; true
-	go run tools/testgen.go tools/vscode-tests/*.js > buffer_generated_test.go
-	mv buffer_generated_test.go internal/buffer
-	gofmt -w internal/buffer/buffer_generated_test.go
-
-test:
-	go test ./internal/...
-	go test ./cmd/...
-	@test -z "$$(gofmt -l .)" || { echo "gofmt issues:"; gofmt -d -e .; exit 1; }
-
-bench:
-	for i in 1 2 3; do \
-		go test -bench=. ./internal/...; \
-	done > benchmark_results
-	benchstat benchmark_results
-
-bench-baseline:
-	for i in 1 2 3; do \
-		go test -bench=. ./internal/...; \
-	done > benchmark_results_baseline
-
-bench-compare:
-	for i in 1 2 3; do \
-		go test -bench=. ./internal/...; \
-	done > benchmark_results
-	benchstat -alpha 0.15 benchmark_results_baseline benchmark_results
+# The finished binary must not pull in a shared libtam, ncurses or terminfo.
+check-deps: $(BIN)
+	@if ldd $(BIN) | grep -Eq 'libtam|libncurses|libtinfo|libtcell'; then \
+		echo "tam-edit: unexpected shared dependency" >&2; \
+		ldd $(BIN) >&2; \
+		exit 1; \
+	fi
+	@echo "tam-edit: only the C library is linked"
 
 clean:
-	rm -f tam-edit micro
+	rm -rf $(BUILD)
+
+install: $(BIN)
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(BIN) $(DESTDIR)$(PREFIX)/bin/tam-edit
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/tam-edit
+
+-include $(OBJS:.o=.d)

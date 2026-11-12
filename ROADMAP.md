@@ -2,13 +2,32 @@
 
 **Last update:** 2026-11-12
 **Owner:** Fred
-**Status:** Planned; no C11 code written yet
+**Status:** Milestone 1 complete: a minimal editor builds and runs
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
 This roadmap describes how tam-edit moves from Go to C11 and links only
 `libtam` and libc. It is milestone-based, not date-based. The Go version stays
 usable on `master` until the C version reaches the v1 parity gate.
+
+## Status
+
+**2026-11-12 — milestone 1 (first runnable editor).** `make` builds
+`build/tam-edit`, which links only libc and libtam 0.7.0. It opens a file,
+edits UTF-8 text (arrows, Home, End, PageUp, PageDown, Enter, Tab,
+Backspace, Delete), saves with Ctrl-S, quits with Ctrl-Q, shows a status line
+and keeps the cursor visible. CRLF files keep their line endings, a missing
+file opens empty, and a modified buffer requires a second Ctrl-Q. Tests:
+`make test`, `make check-deps`, and a pseudo-terminal smoke test covering
+insert, save, quit, dirty-quit and UTF-8.
+
+Not yet present: undo, search, multiple cursors, splits and tabs, syntax
+highlighting, colorschemes, INI settings, mouse, clipboard and the micro
+config importer. The Go tree is still on this branch and on `master`; it is
+not built by the new Makefile and is removed once later phases land.
+
+Libtam 0.7.0 supplies `tam_uni`, `tam_key` and `tam_tty`. Phase 0 scaffolding
+and the document/editing core of Phase 2 are the parts delivered so far.
 
 ## 1. Goal and non-goals
 
