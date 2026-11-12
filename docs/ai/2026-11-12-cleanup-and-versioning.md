@@ -8,6 +8,7 @@
   completed cleanup, corrected documentation and build dependencies, verified
   the result and prepared these records. Fred directed both sessions.
 - **Starting commit**: `ed41363d9bfb7efeaddf9adfd4ecdf02e78c5a5f`.
+- **Implementation commit**: `f6ad3d5e` (cleanup, versioning and verification).
 
 ## Guiding prompts
 
