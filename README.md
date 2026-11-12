@@ -21,20 +21,18 @@ and documentation to the features being ported.
 | Branch | Tree | Build | Status |
 | --- | --- | --- | --- |
 | `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, still usable |
-| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.0.1: minimal editor |
+| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.1.0: daily-usable editor |
 
 New work happens on `c11`. [ROADMAP.md](ROADMAP.md) holds the phase plan and
-the list of what is still missing: undo, search, multiple cursors, splits and
-tabs, syntax highlighting, colorschemes, the micro settings importer, mouse,
-clipboard and shell commands. The Go tree stays on `master`, and on `c11`
-until the C version reaches the 1.0.0 parity gate.
+the milestone definitions. The Go tree stays on `master`, and on `c11` until
+the C version reaches the 1.0.0 parity gate.
 
-Version 0.0.1, from 2026-11-12, is a minimal editor. `make` builds
-`build/tam-edit`, which opens and edits UTF-8 files with the arrow keys, Home,
-End, PageUp, PageDown, Enter, Tab, Backspace and Delete, saves with `Ctrl-S`,
-quits with `Ctrl-Q`, keeps the cursor visible, preserves CRLF line endings and
-requires a second `Ctrl-Q` before discarding a modified buffer. It is the
-first runnable build, not a finished milestone.
+Version 0.1.0 (Milestone 1) is a daily-usable editor. `make` builds
+`build/tam-edit`, which links only libc and libtam 0.7.0. It features a
+double-buffered cell-grid renderer with damage tracking, micro's grouped
+undo and redo, visual selections, word motions and deletions, default micro
+keybindings, interactive command/search/goto prompts, clipboard integration
+(OSC 52 and system tools), and mouse support.
 
 ## Versioning
 

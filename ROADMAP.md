@@ -2,7 +2,7 @@
 
 **Last update:** 2026-11-12
 **Owner:** Fred
-**Status:** version 0.0.1, before the first milestone: a minimal editor builds and runs
+**Status:** version 0.1.0, Milestone 1 complete: daily-usable editor
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
@@ -11,6 +11,29 @@ This roadmap describes how tam-edit moves from Go to C11 and links only
 usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
+
+**2026-11-12 — version 0.1.0 (Milestone 1 exit: daily-usable editor).**
+Phase 3 delivers a complete daily-usable terminal editor linking only libc and
+libtam 0.7.0. Features delivered:
+- Double-buffered cell-grid renderer with damage tracking, wide and combining
+  character support, and synchronized update framing (`tam_tty_frame_begin/end`).
+- Grouped undo and redo matching micro's 1000ms threshold grouping rules.
+- Visual selections with anchor and active cursors, shift-motion selections,
+  and replacement on typing.
+- Word motions (`WordLeft`, `WordRight`) and word deletions (`DeleteWordLeft`).
+- Action registry and keybinding table matching micro's defaults (`bufdefaults`).
+- Interactive prompts: command prompt (`Ctrl-E`), go-to-line (`Ctrl-L`),
+  search prompt (`Ctrl-F` with `Ctrl-N` and `Ctrl-P`), save-as, and dirty-quit.
+- Clipboard integration with OSC 52, external tools (`wl-copy`/`xclip`), and
+  internal clipboard buffer.
+- SGR mouse support (click, drag-selection, scroll wheel) and bracketed paste.
+- Terminal signals: resize (`SIGWINCH`), suspend (`SIGTSTP`) and resume (`SIGCONT`).
+- Verification: 18 unit tests, ASan/UBSan memory sanitization clean, PTY
+  interactive smoke tests pass, and dependency checks confirm libc only.
+
+Not yet present: splits and tabs, native INI settings and micro config importer
+(Milestone 2), syntax highlighting (Milestone 3), shell execution and encodings
+(Milestone 4).
 
 **2026-11-12 — version 0.0.1 (first runnable editor).** `make` builds
 `build/tam-edit`, which links only libc and libtam 0.7.0. It opens a file,

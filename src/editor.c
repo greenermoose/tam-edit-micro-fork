@@ -1,4 +1,6 @@
 #include "editor.h"
+#include "cursor.h"
+#include "undo.h"
 
 #include <tam.h>
 #include <tam_uni.h>
@@ -77,7 +79,6 @@ static void doc_remove_line(edit_doc_t *d, size_t at)
     d->count--;
 }
 
-/* Replace [at, at + remove) with ins in one line. */
 static bool line_replace(char **line, size_t *len, size_t at, size_t remove,
                          const char *ins, size_t ins_len)
 {
@@ -100,8 +101,6 @@ static bool line_replace(char **line, size_t *len, size_t at, size_t remove,
     return true;
 }
 
-/* Split data into lines on '\n'. A trailing newline yields a final empty
- * line, so the model round-trips the file exactly. */
 static bool doc_from_text(edit_doc_t *d, const char *data, size_t len,
                           bool *crlf_out)
 {
@@ -149,7 +148,146 @@ static bool doc_join_text(edit_doc_t *d, bool crlf, tam_str_t *out)
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cursor helpers                                                             */
+/* Low-level Raw Operations for Undo/Redo Engine                              */
+/* -------------------------------------------------------------------------- */
+
+void editor_raw_insert(editor_t *ed, size_t line, size_t col,
+                       const char *text, size_t len)
+{
+    if (line >= ed->doc.count) {
+        if (!doc_insert_line(&ed->doc, line, "", 0)) return;
+    }
+
+    char *cur = ed->doc.lines[line];
+    size_t cur_len = ed->doc.lens[line];
+    size_t at = edit_rune_to_byte(cur, cur_len, col);
+
+    if (len == 1 && text[0] == '\n') {
+        doc_insert_line(&ed->doc, line + 1, cur + at, cur_len - at);
+        line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, cur_len - at, "", 0);
+        return;
+    }
+
+    /* Check if text contains any newlines */
+    const char *nl = memchr(text, '\n', len);
+    if (nl == NULL) {
+        line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, 0, text, len);
+    } else {
+        /* Multi-line insertion */
+        size_t first_part_len = nl - text;
+        size_t rest_offset    = first_part_len + 1;
+        size_t tail_len       = cur_len - at;
+        char *tail = malloc(tail_len + 1);
+        if (tail != NULL) {
+            memcpy(tail, cur + at, tail_len);
+            tail[tail_len] = '\0';
+        }
+
+        /* 1. Truncate current line at 'at' and append first part */
+        line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, cur_len - at, text, first_part_len);
+
+        /* 2. Process subsequent lines */
+        size_t cur_l = line + 1;
+        const char *p = text + rest_offset;
+        size_t rem = len - rest_offset;
+
+        while (rem > 0) {
+            const char *next_nl = memchr(p, '\n', rem);
+            if (next_nl == NULL) {
+                /* Last part: append tail */
+                size_t p_len = rem;
+                size_t combined_len = p_len + (tail ? tail_len : 0);
+                char *combined = malloc(combined_len + 1);
+                if (combined != NULL) {
+                    memcpy(combined, p, p_len);
+                    if (tail != NULL && tail_len > 0) {
+                        memcpy(combined + p_len, tail, tail_len);
+                    }
+                    combined[combined_len] = '\0';
+                    doc_insert_line(&ed->doc, cur_l, combined, combined_len);
+                    free(combined);
+                }
+                break;
+            } else {
+                size_t seg_len = next_nl - p;
+                doc_insert_line(&ed->doc, cur_l, p, seg_len);
+                cur_l++;
+                p = next_nl + 1;
+                rem = (text + len) - p;
+            }
+        }
+        free(tail);
+    }
+}
+
+void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
+{
+    if (line >= ed->doc.count) return;
+
+    char *cur = ed->doc.lines[line];
+    size_t cur_len = ed->doc.lens[line];
+    size_t line_runes = edit_line_runes(cur, cur_len);
+
+    if (col == line_runes && runes == 1 && line + 1 < ed->doc.count) {
+        /* Join line with line + 1 */
+        char *next = ed->doc.lines[line + 1];
+        size_t next_len = ed->doc.lens[line + 1];
+        line_replace(&ed->doc.lines[line], &ed->doc.lens[line], cur_len, 0, next, next_len);
+        doc_remove_line(&ed->doc, line + 1);
+        return;
+    }
+
+    size_t from = edit_rune_to_byte(cur, cur_len, col);
+    size_t to   = edit_rune_to_byte(cur, cur_len, col + runes);
+    line_replace(&ed->doc.lines[line], &ed->doc.lens[line], from, to - from, "", 0);
+}
+
+void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *text, size_t len)
+{
+    if (line >= ed->doc.count || text == NULL || len == 0) return;
+
+    size_t nl_count = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (text[i] == '\n') nl_count++;
+    }
+
+    if (nl_count == 0) {
+        size_t runes = edit_line_runes(text, len);
+        editor_raw_remove(ed, line, col, runes);
+        return;
+    }
+
+    /* 1. Remove first segment from line */
+    const char *first_nl = memchr(text, '\n', len);
+    size_t first_len = first_nl - text;
+    size_t first_runes = edit_line_runes(text, first_len);
+    if (first_runes > 0) {
+        editor_raw_remove(ed, line, col, first_runes);
+    }
+
+    /* 2. Remove intermediate lines */
+    for (size_t i = 1; i < nl_count; i++) {
+        if (line + 1 < ed->doc.count) {
+            doc_remove_line(&ed->doc, line + 1);
+        }
+    }
+
+    /* 3. Remove last segment from line + 1 */
+    const char *last_nl = memrchr(text, '\n', len);
+    size_t last_len = (text + len) - (last_nl + 1);
+    size_t last_runes = edit_line_runes(last_nl + 1, last_len);
+    if (line + 1 < ed->doc.count) {
+        if (last_runes > 0) {
+            editor_raw_remove(ed, line + 1, 0, last_runes);
+        }
+        /* 4. Join line + 1 onto line */
+        size_t cur_runes = edit_line_runes(ed->doc.lines[line], ed->doc.lens[line]);
+        editor_raw_remove(ed, line, cur_runes, 1);
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rune & Visual Column Helpers                                               */
 /* -------------------------------------------------------------------------- */
 
 size_t edit_line_runes(const char *line, size_t len)
@@ -224,22 +362,6 @@ size_t edit_visual_to_rune(const char *line, size_t len, int cells)
     return col;
 }
 
-static size_t cur_runes(const editor_t *ed)
-{
-    if (ed->doc.count == 0) return 0;
-    return edit_line_runes(ed->doc.lines[ed->cx_line],
-                           ed->doc.lens[ed->cx_line]);
-}
-
-static void clamp_cursor(editor_t *ed)
-{
-    if (ed->doc.count == 0) return;
-    if (ed->cx_line >= ed->doc.count) ed->cx_line = ed->doc.count - 1;
-
-    size_t runes = cur_runes(ed);
-    if (ed->cx_col > runes) ed->cx_col = runes;
-}
-
 static void touch(editor_t *ed)
 {
     ed->dirty = true;
@@ -254,13 +376,16 @@ void editor_init(editor_t *ed)
 {
     memset(ed, 0, sizeof(*ed));
     ed->running = true;
+    ed->tty_out_fd = -1;
     doc_insert_line(&ed->doc, 0, "", 0);
+    undo_init(ed);
 }
 
 void editor_free(editor_t *ed)
 {
     if (ed == NULL) return;
     doc_clear(&ed->doc);
+    undo_free(ed);
     free(ed->path);
     ed->path = NULL;
 }
@@ -280,7 +405,6 @@ bool editor_load(editor_t *ed, const char *path)
 
     if (data == NULL) {
         if (!tam_fs_file_exists(path)) {
-            /* New file: the empty document from editor_init is correct. */
             free(ed->path);
             ed->path = strdup(path);
             ed->dirty = false;
@@ -291,8 +415,9 @@ bool editor_load(editor_t *ed, const char *path)
     }
 
     doc_clear(&ed->doc);
+    undo_free(ed);
+    undo_init(ed);
 
-    /* A UTF-8 BOM is metadata, not text. */
     const char *text = data;
     size_t text_len = len;
     if (text_len >= 3 && (unsigned char)text[0] == 0xEF &&
@@ -320,13 +445,14 @@ bool editor_load(editor_t *ed, const char *path)
     ed->goal_col = 0;
     ed->top_line = 0;
     ed->left_col = 0;
+    ed->sel.active = false;
     ed->message[0] = '\0';
     return true;
 }
 
-bool editor_save(editor_t *ed)
+bool editor_save_to(editor_t *ed, const char *path)
 {
-    if (ed->path == NULL) {
+    if (path == NULL || path[0] == '\0') {
         editor_set_message(ed, "No file name");
         return false;
     }
@@ -345,57 +471,89 @@ bool editor_save(editor_t *ed)
 
     mode_t mode = 0644;
     struct stat st;
-    if (stat(ed->path, &st) == 0) mode = st.st_mode & 07777;
+    if (stat(path, &st) == 0) mode = st.st_mode & 07777;
 
-    bool ok = tam_fs_write_atomic(ed->path, text, tam_str_len(text), mode);
+    bool ok = tam_fs_write_atomic(path, text, tam_str_len(text), mode);
     size_t written = tam_str_len(text);
     tam_str_free(text);
 
     if (!ok) {
-        editor_set_message(ed, "Could not save %s", ed->path);
+        editor_set_message(ed, "Could not save %s", path);
         return false;
     }
 
+    if (ed->path == NULL || strcmp(ed->path, path) != 0) {
+        free(ed->path);
+        ed->path = strdup(path);
+    }
     ed->dirty = false;
-    editor_set_message(ed, "Saved %zu bytes to %s", written, ed->path);
+    editor_set_message(ed, "Saved %zu bytes to %s", written, path);
     return true;
+}
+
+bool editor_save(editor_t *ed)
+{
+    return editor_save_to(ed, ed->path);
 }
 
 void editor_insert_codepoint(editor_t *ed, uint32_t cp)
 {
+    if (ed->sel.active) {
+        selection_delete(ed);
+    }
+
     char utf8[4];
     size_t n = tam_utf8_encode(cp, utf8);
 
-    char *line = ed->doc.lines[ed->cx_line];
-    size_t len = ed->doc.lens[ed->cx_line];
-    size_t at = edit_rune_to_byte(line, len, ed->cx_col);
+    undo_record_insert(ed, ed->cx_line, ed->cx_col, utf8, n);
+    undo_clear_redo(ed);
 
-    if (!line_replace(&line, &len, at, 0, utf8, n)) return;
-    ed->doc.lines[ed->cx_line] = line;
-    ed->doc.lens[ed->cx_line] = len;
+    editor_raw_insert(ed, ed->cx_line, ed->cx_col, utf8, n);
     ed->cx_col++;
     ed->goal_col = ed->cx_col;
     touch(ed);
 }
 
+void editor_insert_text(editor_t *ed, const char *text, size_t len)
+{
+    if (text == NULL || len == 0) return;
+    if (ed->sel.active) {
+        selection_delete(ed);
+    }
+
+    undo_record_insert(ed, ed->cx_line, ed->cx_col, text, len);
+    undo_clear_redo(ed);
+
+    editor_raw_insert(ed, ed->cx_line, ed->cx_col, text, len);
+
+    /* Update cursor after inserted text */
+    const char *last_nl = memrchr(text, '\n', len);
+    if (last_nl == NULL) {
+        ed->cx_col += edit_line_runes(text, len);
+    } else {
+        size_t n_lines = 0;
+        for (size_t i = 0; i < len; i++) {
+            if (text[i] == '\n') n_lines++;
+        }
+        ed->cx_line += n_lines;
+        size_t last_part_len = (text + len) - (last_nl + 1);
+        ed->cx_col = edit_line_runes(last_nl + 1, last_part_len);
+    }
+    ed->goal_col = ed->cx_col;
+    cursor_clamp(ed);
+    touch(ed);
+}
+
 void editor_insert_newline(editor_t *ed)
 {
-    char *line = ed->doc.lines[ed->cx_line];
-    size_t len = ed->doc.lens[ed->cx_line];
-    size_t at = edit_rune_to_byte(line, len, ed->cx_col);
-
-    if (!doc_insert_line(&ed->doc, ed->cx_line + 1, line + at, len - at)) {
-        return;
+    if (ed->sel.active) {
+        selection_delete(ed);
     }
 
-    if (!line_replace(&line, &len, at, len - at, "", 0)) {
-        doc_remove_line(&ed->doc, ed->cx_line + 1);
-        return;
-    }
+    undo_record_insert(ed, ed->cx_line, ed->cx_col, "\n", 1);
+    undo_clear_redo(ed);
 
-    ed->doc.lines[ed->cx_line] = line;
-    ed->doc.lens[ed->cx_line] = len;
-
+    editor_raw_insert(ed, ed->cx_line, ed->cx_col, "\n", 1);
     ed->cx_line++;
     ed->cx_col = 0;
     ed->goal_col = 0;
@@ -409,14 +567,22 @@ void editor_insert_tab(editor_t *ed)
 
 void editor_backspace(editor_t *ed)
 {
+    if (ed->sel.active) {
+        selection_delete(ed);
+        touch(ed);
+        return;
+    }
+
     if (ed->cx_col > 0) {
         char *line = ed->doc.lines[ed->cx_line];
         size_t len = ed->doc.lens[ed->cx_line];
         size_t from = edit_rune_to_byte(line, len, ed->cx_col - 1);
-        size_t to = edit_rune_to_byte(line, len, ed->cx_col);
-        if (!line_replace(&line, &len, from, to - from, "", 0)) return;
-        ed->doc.lines[ed->cx_line] = line;
-        ed->doc.lens[ed->cx_line] = len;
+        size_t to   = edit_rune_to_byte(line, len, ed->cx_col);
+
+        undo_record_remove(ed, ed->cx_line, ed->cx_col - 1, line + from, to - from);
+        undo_clear_redo(ed);
+
+        editor_raw_remove(ed, ed->cx_line, ed->cx_col - 1, 1);
         ed->cx_col--;
         ed->goal_col = ed->cx_col;
         touch(ed);
@@ -428,92 +594,77 @@ void editor_backspace(editor_t *ed)
     size_t prev = ed->cx_line - 1;
     size_t prev_runes = edit_line_runes(ed->doc.lines[prev],
                                         ed->doc.lens[prev]);
-    char *line = ed->doc.lines[prev];
-    size_t len = ed->doc.lens[prev];
 
-    if (!line_replace(&line, &len, len, 0,
-                      ed->doc.lines[ed->cx_line],
-                      ed->doc.lens[ed->cx_line])) {
-        return;
-    }
+    undo_record_remove(ed, prev, prev_runes, "\n", 1);
+    undo_clear_redo(ed);
 
-    ed->doc.lines[prev] = line;
-    ed->doc.lens[prev] = len;
-    doc_remove_line(&ed->doc, ed->cx_line);
-
+    editor_raw_remove(ed, prev, prev_runes, 1);
     ed->cx_line = prev;
-    ed->cx_col = prev_runes;
+    ed->cx_col  = prev_runes;
     ed->goal_col = ed->cx_col;
     touch(ed);
 }
 
 void editor_delete(editor_t *ed)
 {
-    size_t runes = cur_runes(ed);
+    if (ed->sel.active) {
+        selection_delete(ed);
+        touch(ed);
+        return;
+    }
+
+    size_t runes = edit_line_runes(ed->doc.lines[ed->cx_line],
+                                   ed->doc.lens[ed->cx_line]);
 
     if (ed->cx_col < runes) {
         char *line = ed->doc.lines[ed->cx_line];
         size_t len = ed->doc.lens[ed->cx_line];
         size_t from = edit_rune_to_byte(line, len, ed->cx_col);
-        size_t to = edit_rune_to_byte(line, len, ed->cx_col + 1);
-        if (!line_replace(&line, &len, from, to - from, "", 0)) return;
-        ed->doc.lines[ed->cx_line] = line;
-        ed->doc.lens[ed->cx_line] = len;
+        size_t to   = edit_rune_to_byte(line, len, ed->cx_col + 1);
+
+        undo_record_remove(ed, ed->cx_line, ed->cx_col, line + from, to - from);
+        undo_clear_redo(ed);
+
+        editor_raw_remove(ed, ed->cx_line, ed->cx_col, 1);
         touch(ed);
         return;
     }
 
     if (ed->cx_line + 1 >= ed->doc.count) return;
 
-    char *line = ed->doc.lines[ed->cx_line];
-    size_t len = ed->doc.lens[ed->cx_line];
-    size_t next = ed->cx_line + 1;
+    undo_record_remove(ed, ed->cx_line, runes, "\n", 1);
+    undo_clear_redo(ed);
 
-    if (!line_replace(&line, &len, len, 0,
-                      ed->doc.lines[next], ed->doc.lens[next])) {
-        return;
-    }
-    ed->doc.lines[ed->cx_line] = line;
-    ed->doc.lens[ed->cx_line] = len;
-    doc_remove_line(&ed->doc, next);
+    editor_raw_remove(ed, ed->cx_line, runes, 1);
     touch(ed);
+}
+
+bool editor_undo(editor_t *ed)
+{
+    return undo_perform(ed);
+}
+
+bool editor_redo(editor_t *ed)
+{
+    return redo_perform(ed);
 }
 
 void editor_move(editor_t *ed, long dx, long dy)
 {
-    if (dy != 0) {
-        long line = (long)ed->cx_line + dy;
-        if (line < 0) line = 0;
-        if (line >= (long)ed->doc.count) line = (long)ed->doc.count - 1;
-        ed->cx_line = (size_t)line;
-        ed->cx_col = ed->goal_col;
-        clamp_cursor(ed);
-    }
-
-    if (dx != 0) {
-        long col = (long)ed->cx_col + dx;
-        if (col < 0) col = 0;
-        size_t runes = cur_runes(ed);
-        if (col > (long)runes) col = (long)runes;
-        ed->cx_col = (size_t)col;
-        ed->goal_col = ed->cx_col;
-    }
+    cursor_move(ed, dx, dy, false);
 }
 
 void editor_home(editor_t *ed)
 {
-    ed->cx_col = 0;
-    ed->goal_col = 0;
+    cursor_home(ed, false);
 }
 
 void editor_end(editor_t *ed)
 {
-    ed->cx_col = cur_runes(ed);
-    ed->goal_col = ed->cx_col;
+    cursor_end(ed, false);
 }
 
 void editor_page(editor_t *ed, long pages, int text_rows)
 {
-    if (text_rows < 1) text_rows = 1;
-    editor_move(ed, 0, pages * text_rows);
+    cursor_page(ed, pages, text_rows, false);
 }

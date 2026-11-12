@@ -281,6 +281,8 @@ static void test_save_without_path(void)
     printf("  [PASS] test_save_without_path\n");
 }
 
+void test_milestone1_run(void);
+
 int main(void)
 {
     setlocale(LC_CTYPE, "");
@@ -296,6 +298,8 @@ int main(void)
     test_visual_columns();
     test_vertical_goal();
     test_save_without_path();
-    printf("editor tests passed\n");
+    printf("editor tests passed\n\n");
+
+    test_milestone1_run();
     return 0;
 }

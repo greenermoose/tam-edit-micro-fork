@@ -1,4 +1,8 @@
+#include "actions.h"
+#include "clipboard.h"
+#include "cursor.h"
 #include "editor.h"
+#include "prompt.h"
 #include "render.h"
 
 #include <tam.h>
@@ -12,13 +16,13 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Injected by the Makefile from its VERSION variable. */
 #ifndef TAM_EDIT_VERSION
-#define TAM_EDIT_VERSION "0.0.0-unknown"
+#define TAM_EDIT_VERSION "0.1.0"
 #endif
 
 static volatile sig_atomic_t g_resized;
 static volatile sig_atomic_t g_stop;
+static volatile sig_atomic_t g_suspend;
 
 static void on_winch(int sig)
 {
@@ -30,6 +34,12 @@ static void on_stop(int sig)
 {
     (void)sig;
     g_stop = 1;
+}
+
+static void on_tstp(int sig)
+{
+    (void)sig;
+    g_suspend = 1;
 }
 
 static void install_signals(void)
@@ -45,6 +55,9 @@ static void install_signals(void)
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGHUP, &sa, NULL);
+
+    sa.sa_handler = on_tstp;
+    sigaction(SIGTSTP, &sa, NULL);
 }
 
 static void usage(FILE *out)
@@ -52,106 +65,102 @@ static void usage(FILE *out)
     fprintf(out,
         "Usage: tam-edit [OPTIONS] [FILE]\n"
         "\n"
-        "A small terminal text editor built on libtam.\n"
+        "A small, fast terminal text editor built on libtam.\n"
         "\n"
-        "Keys:\n"
-        "  Arrow keys, Home, End, PageUp, PageDown   move\n"
+        "Keybindings:\n"
+        "  Arrows, Home, End, PageUp, PageDown       move cursor\n"
+        "  Shift + Move                              select text\n"
+        "  Ctrl-Left, Ctrl-Right                     move by word\n"
         "  Enter, Tab, Backspace, Delete             edit\n"
+        "  Ctrl-Z, Ctrl-Y                            undo / redo\n"
+        "  Ctrl-C, Ctrl-X, Ctrl-V                    copy / cut / paste\n"
+        "  Ctrl-A                                    select all\n"
         "  Ctrl-S                                    save\n"
-        "  Ctrl-Q                                    quit (twice when modified)\n"
+        "  Ctrl-Q                                    quit\n"
+        "  Ctrl-F, Ctrl-N, Ctrl-P                    find / next / previous\n"
+        "  Ctrl-E                                    command prompt\n"
+        "  Ctrl-L                                    go to line\n"
         "\n"
         "Options:\n"
         "  -h, --help       show this help\n"
         "  -v, --version    show the version\n");
 }
 
-static bool handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)
+/* Parse SGR mouse escape sequences: \x1b[<btn;col;row[M|m] */
+static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
+                             size_t *consumed, int text_rows)
 {
-    bool was_armed = ed->quit_armed;
-    ed->quit_armed = false;
-
-    switch (ev->type) {
-    case TAM_KEY_CHAR:
-        if (ev->mods & TAM_MOD_CTRL) {
-            uint32_t cp = ev->codepoint;
-            if (cp == 's') {
-                editor_save(ed);
-                return true;
-            }
-            if (cp == 'q') {
-                if (ed->dirty && !was_armed) {
-                    editor_set_message(ed,
-                        "Unsaved changes: Ctrl-Q again to quit, Ctrl-S to save");
-                    ed->quit_armed = true;
-                    return true;
-                }
-                ed->running = false;
-                return true;
-            }
-            return false;
-        }
-        if (ev->mods == 0 && ev->codepoint >= 0x20 && ev->codepoint != 0x7F) {
-            editor_insert_codepoint(ed, ev->codepoint);
-            return true;
-        }
-        return false;
-
-    case TAM_KEY_ENTER:
-        editor_insert_newline(ed);
-        return true;
-    case TAM_KEY_TAB:
-        editor_insert_tab(ed);
-        return true;
-    case TAM_KEY_BACKSPACE:
-        editor_backspace(ed);
-        return true;
-    case TAM_KEY_DELETE:
-        editor_delete(ed);
-        return true;
-
-    case TAM_KEY_UP:
-        editor_move(ed, 0, -1);
-        return true;
-    case TAM_KEY_DOWN:
-        editor_move(ed, 0, 1);
-        return true;
-    case TAM_KEY_LEFT:
-        editor_move(ed, -1, 0);
-        return true;
-    case TAM_KEY_RIGHT:
-        editor_move(ed, 1, 0);
-        return true;
-    case TAM_KEY_HOME:
-        editor_home(ed);
-        return true;
-    case TAM_KEY_END:
-        editor_end(ed);
-        return true;
-    case TAM_KEY_PAGE_UP:
-        editor_page(ed, -1, text_rows);
-        return true;
-    case TAM_KEY_PAGE_DOWN:
-        editor_page(ed, 1, text_rows);
-        return true;
-
-    case TAM_KEY_ESC:
-    case TAM_KEY_INSERT:
-    case TAM_KEY_F1:
-    case TAM_KEY_F2:
-    case TAM_KEY_F3:
-    case TAM_KEY_F4:
-    case TAM_KEY_F5:
-    case TAM_KEY_F6:
-    case TAM_KEY_F7:
-    case TAM_KEY_F8:
-    case TAM_KEY_F9:
-    case TAM_KEY_F10:
-    case TAM_KEY_F11:
-    case TAM_KEY_F12:
-    case TAM_KEY_NONE:
-    default:
+    if (len < 6 || buf[0] != '\x1b' || buf[1] != '[' || buf[2] != '<') {
         return false;
     }
+
+    /* Find terminating 'M' or 'm' */
+    size_t end = 3;
+    while (end < len && buf[end] != 'M' && buf[end] != 'm') end++;
+    if (end >= len) return false;
+
+    char end_char = (char)buf[end];
+    *consumed = end + 1;
+
+    int btn = 0, x = 0, y = 0;
+    if (sscanf((const char *)buf + 3, "%d;%d;%d", &btn, &x, &y) != 3) {
+        return true;
+    }
+
+    if (btn == 64) {
+        /* Wheel up: scroll up 3 lines */
+        cursor_move(ed, 0, -3, false);
+        return true;
+    }
+    if (btn == 65) {
+        /* Wheel down: scroll down 3 lines */
+        cursor_move(ed, 0, 3, false);
+        return true;
+    }
+
+    int screen_r = y - 1;
+    int screen_c = x - 1;
+    if (screen_r < 0) screen_r = 0;
+    if (screen_r >= text_rows) screen_r = text_rows - 1;
+
+    size_t doc_l = ed->top_line + (size_t)screen_r;
+    if (doc_l >= ed->doc.count) {
+        doc_l = ed->doc.count > 0 ? ed->doc.count - 1 : 0;
+    }
+
+    size_t rune_col = 0;
+    if (doc_l < ed->doc.count) {
+        int target_visual = screen_c + (int)ed->left_col;
+        rune_col = edit_visual_to_rune(ed->doc.lines[doc_l],
+                                       ed->doc.lens[doc_l],
+                                       target_visual);
+    }
+
+    if (end_char == 'M') {
+        if (btn == 0) {
+            /* Left click */
+            ed->cx_line  = doc_l;
+            ed->cx_col   = rune_col;
+            ed->goal_col = rune_col;
+            cursor_clamp(ed);
+            ed->sel.active = false;
+            return true;
+        } else if (btn == 32) {
+            /* Left drag */
+            if (!ed->sel.active) {
+                ed->sel.active = true;
+                ed->sel.anchor = (loc_t){ed->cx_line, ed->cx_col};
+            }
+            ed->cx_line  = doc_l;
+            ed->cx_col   = rune_col;
+            ed->goal_col = rune_col;
+            cursor_clamp(ed);
+            ed->sel.cursor = (loc_t){ed->cx_line, ed->cx_col};
+            return true;
+        }
+    }
+
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -179,11 +188,12 @@ int main(int argc, char **argv)
         path = argv[i];
     }
 
-    /* Unicode width and character data come from the C library locale. */
     setlocale(LC_CTYPE, "");
 
     editor_t ed;
     editor_init(&ed);
+    actions_init();
+    clipboard_init();
 
     if (path != NULL) {
         bool existed = tam_fs_file_exists(path);
@@ -204,32 +214,60 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    ed.tty_out_fd = tty.out_fd;
+
     install_signals();
 
     tam_tty_alt_screen(&tty, true);
     tam_tty_raw(&tty, true);
     tam_tty_paste(&tty, true);
+    tam_tty_mouse(&tty, true);
+
+    renderer_t ren;
+    renderer_init(&ren);
 
     tam_key_parser_t keys;
     tam_key_init(&keys);
 
     bool need_draw = true;
-    unsigned char buf[256];
+    bool in_paste  = false;
+    tam_str_t paste_buf = NULL;
+    unsigned char buf[512];
 
     while (ed.running && !g_stop) {
+        if (g_suspend) {
+            g_suspend = 0;
+            tam_tty_mouse(&tty, false);
+            tam_tty_paste(&tty, false);
+            tam_tty_alt_screen(&tty, false);
+            tam_tty_raw(&tty, false);
+            tam_tty_cursor_visible(&tty, true);
+
+            signal(SIGTSTP, SIG_DFL);
+            raise(SIGTSTP);
+
+            /* Resume */
+            install_signals();
+            tam_tty_alt_screen(&tty, true);
+            tam_tty_raw(&tty, true);
+            tam_tty_paste(&tty, true);
+            tam_tty_mouse(&tty, true);
+            ren.force_redraw = true;
+            need_draw = true;
+        }
+
         if (g_resized) {
             g_resized = 0;
             tam_tty_size(&tty, NULL, NULL);
+            ren.force_redraw = true;
             need_draw = true;
         }
 
         if (need_draw) {
-            render_draw(&ed, &tty);
+            render_draw(&ren, &ed, &tty);
             need_draw = false;
         }
 
-        /* A lone ESC is a key of its own, but only after a short wait for a
-         * sequence that may still be arriving. */
         int timeout = tam_key_pending(&keys) > 0 ? 20 : -1;
         int n = tam_tty_read(&tty, buf, sizeof(buf), timeout);
 
@@ -237,31 +275,90 @@ int main(int argc, char **argv)
         if (n == 0) {
             tam_key_event_t ev;
             if (tam_key_timeout(&keys, &ev)) {
-                handle_key(&ed, &ev, render_text_rows(&tty));
+                if (ed.prompt.active) {
+                    prompt_handle_key(&ed, &ev);
+                } else {
+                    actions_handle_key(&ed, &ev, render_text_rows(&tty));
+                }
                 need_draw = true;
             }
             continue;
         }
 
-        if (tam_key_feed(&keys, buf, (size_t)n) < 0) {
-            /* The pending sequence grew past the buffer; drop it. */
-            tam_key_init(&keys);
-            continue;
-        }
+        /* Bracketed paste check */
+        size_t b_idx = 0;
+        size_t b_len = (size_t)n;
 
-        tam_key_event_t ev;
-        while (tam_key_next(&keys, &ev) == 1) {
-            handle_key(&ed, &ev, render_text_rows(&tty));
-            need_draw = true;
-            if (!ed.running || g_stop) break;
+        while (b_idx < b_len) {
+            if (!in_paste && b_idx + 6 <= b_len &&
+                memcmp(buf + b_idx, "\x1b[200~", 6) == 0) {
+                in_paste = true;
+                b_idx += 6;
+                paste_buf = tam_str_new("");
+                continue;
+            }
+
+            if (in_paste) {
+                const char *end_paste = memmem(buf + b_idx, b_len - b_idx,
+                                               "\x1b[201~", 6);
+                if (end_paste != NULL) {
+                    size_t chunk_len = (const unsigned char *)end_paste - (buf + b_idx);
+                    if (chunk_len > 0) {
+                        paste_buf = tam_str_cat_len(paste_buf, buf + b_idx, chunk_len);
+                    }
+                    if (paste_buf != NULL) {
+                        editor_insert_text(&ed, paste_buf, tam_str_len(paste_buf));
+                        tam_str_free(paste_buf);
+                        paste_buf = NULL;
+                    }
+                    in_paste = false;
+                    b_idx = ((const unsigned char *)end_paste - buf) + 6;
+                    need_draw = true;
+                    continue;
+                } else {
+                    paste_buf = tam_str_cat_len(paste_buf, buf + b_idx, b_len - b_idx);
+                    b_idx = b_len;
+                    continue;
+                }
+            }
+
+            /* SGR Mouse check */
+            size_t consumed = 0;
+            if (handle_mouse_sgr(&ed, buf + b_idx, b_len - b_idx, &consumed,
+                                 render_text_rows(&tty))) {
+                b_idx += consumed;
+                need_draw = true;
+                continue;
+            }
+
+            /* Feed byte into key decoder */
+            tam_key_feed(&keys, buf + b_idx, 1);
+            b_idx++;
+
+            tam_key_event_t ev;
+            while (tam_key_next(&keys, &ev) == 1) {
+                if (ed.prompt.active) {
+                    prompt_handle_key(&ed, &ev);
+                } else {
+                    actions_handle_key(&ed, &ev, render_text_rows(&tty));
+                }
+                need_draw = true;
+                if (!ed.running || g_stop) break;
+            }
         }
     }
 
+    tam_str_free(paste_buf);
+    tam_tty_mouse(&tty, false);
     tam_tty_paste(&tty, false);
     tam_tty_alt_screen(&tty, false);
     tam_tty_raw(&tty, false);
     tam_tty_close(&tty);
+
+    renderer_free(&ren);
     editor_free(&ed);
+    clipboard_free();
+    actions_free();
 
     if (g_stop) {
         static const char note[] = "tam-edit: terminated\n";

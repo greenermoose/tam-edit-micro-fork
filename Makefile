@@ -13,17 +13,20 @@ LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)
 LIBTAM_LIBS   := $(shell $(PKG_CONFIG) --libs libtam 2>/dev/null)
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
-VERSION := 0.0.1
+VERSION := 0.1.0
 PREFIX ?= $(HOME)/.local/dev
 
 BUILD = build
 BIN = $(BUILD)/tam-edit
 TEST_BIN = $(BUILD)/test_editor
-SRCS = src/main.c src/editor.c src/render.c
-OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
-TEST_SRCS = src/editor.c tests/test_editor.c
+TEST_ASAN_BIN = $(BUILD)/test_asan
 
-.PHONY: all test clean install uninstall check-deps
+CORE_SRCS = src/editor.c src/cursor.c src/undo.c src/actions.c src/prompt.c src/clipboard.c src/render.c
+SRCS = src/main.c $(CORE_SRCS)
+OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
+TEST_SRCS = $(CORE_SRCS) tests/test_editor.c tests/test_milestone1.c
+
+.PHONY: all test test-asan test-pty clean install uninstall check-deps
 
 all: $(BIN)
 
@@ -42,8 +45,17 @@ $(BIN): $(OBJS)
 $(TEST_BIN): $(TEST_SRCS) src/editor.h Makefile | $(BUILD)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(LIBTAM_CFLAGS) $(TEST_SRCS) $(LIBTAM_LIBS) -o $@
 
+$(TEST_ASAN_BIN): $(TEST_SRCS) src/editor.h Makefile | $(BUILD)
+	$(CC) $(CFLAGS) -fsanitize=address,undefined $(LDFLAGS) $(LIBTAM_CFLAGS) $(TEST_SRCS) $(LIBTAM_LIBS) -o $@
+
 test: $(TEST_BIN)
 	$(abspath $(TEST_BIN))
+
+test-asan: $(TEST_ASAN_BIN)
+	$(abspath $(TEST_ASAN_BIN))
+
+test-pty: $(BIN)
+	python3 tests/test_pty_smoke.py
 
 # The finished binary must not pull in a shared libtam, ncurses or terminfo.
 check-deps: $(BIN)
