@@ -11,7 +11,9 @@
 #include <tam_key.h>
 #include <tam_tty.h>
 
+#include <errno.h>
 #include <locale.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +21,7 @@
 #include <unistd.h>
 
 #ifndef TAM_EDIT_VERSION
-#define TAM_EDIT_VERSION "0.2.0"
+#define TAM_EDIT_VERSION "0.4.0"
 #endif
 
 static volatile sig_atomic_t g_resized;
@@ -239,8 +241,14 @@ static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
     }
 
     if (end_char == 'M') {
+        if (btn == 16) {
+            /* Ctrl + Left click -> toggle multi-cursor */
+            editor_toggle_cursor_at(ed, doc_l, rune_col);
+            return true;
+        }
         if (btn == 0) {
             /* Left click */
+            editor_remove_all_cursors(ed);
             ed->cx_line  = doc_l;
             ed->cx_col   = rune_col;
             ed->goal_col = rune_col;
@@ -339,6 +347,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    ed.tty = &tty;
     ed.tty_out_fd = tty.out_fd;
 
     install_signals();
@@ -388,9 +397,97 @@ int main(int argc, char **argv)
             need_draw = true;
         }
 
+        if (!ed.prompt.active && ed.active_view && ed.active_view->buf &&
+            strcmp(ed.config.reload, "disabled") != 0 &&
+            buffer_check_external_change(ed.active_view->buf)) {
+            if (strcmp(ed.config.reload, "auto") == 0 && !ed.dirty) {
+                editor_reopen(&ed, NULL);
+                need_draw = true;
+            } else if (strcmp(ed.config.reload, "prompt") == 0) {
+                prompt_open_confirm_reload(&ed, ed.path);
+                need_draw = true;
+            }
+        }
+
         if (need_draw) {
             render_draw(&ren, &ed, &tty);
             need_draw = false;
+        }
+
+        int timeout_ms = -1;
+        if (ed.bg_job.active) {
+            if (shell_bg_check_timeout(&ed.bg_job, &timeout_ms)) {
+                editor_set_message(&ed, "Command timed out: %s", ed.bg_job.cmd_desc);
+                need_draw = true;
+                continue;
+            }
+        }
+        if (tam_key_pending(&keys) > 0) {
+            if (timeout_ms < 0 || timeout_ms > 50) timeout_ms = 50;
+        }
+
+        struct pollfd fds[2];
+        nfds_t nfds = 1;
+        fds[0].fd = STDIN_FILENO;
+        fds[0].events = POLLIN;
+        fds[0].revents = 0;
+        if (ed.bg_job.active && ed.bg_job.pipe_fd >= 0) {
+            fds[1].fd = ed.bg_job.pipe_fd;
+            fds[1].events = POLLIN;
+            fds[1].revents = 0;
+            nfds = 2;
+        }
+
+        int prc = poll(fds, nfds, timeout_ms);
+        if (prc < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (prc == 0) {
+            if (tam_key_pending(&keys) > 0) {
+                tam_key_event_t ev;
+                while (tam_key_timeout(&keys, &ev) == 1) {
+                    if (ed.prompt.active) {
+                        prompt_handle_key(&ed, &ev);
+                    } else {
+                        actions_handle_key(&ed, &ev, render_text_rows(&tty));
+                    }
+                    need_draw = true;
+                    if (!ed.running || g_stop) break;
+                }
+            }
+            continue;
+        }
+
+        if (nfds == 2 && (fds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (!shell_bg_poll_read(&ed.bg_job)) {
+                if (ed.bg_job.timed_out) {
+                    editor_set_message(&ed, "Command timed out: %s", ed.bg_job.cmd_desc);
+                } else if (ed.bg_job.out_len > 0) {
+                    bool multiline = memchr(ed.bg_job.output, '\n', ed.bg_job.out_len) != NULL;
+                    if (multiline || ed.bg_job.out_len > 120) {
+                        editor_open_scratch(&ed, "[run]", ed.bg_job.output, true);
+                        editor_set_message(&ed, "Finished (%d): %s",
+                                           ed.bg_job.exit_code, ed.bg_job.cmd_desc);
+                    } else {
+                        size_t mlen = ed.bg_job.out_len;
+                        while (mlen > 0 && (ed.bg_job.output[mlen - 1] == '\n' ||
+                                            ed.bg_job.output[mlen - 1] == '\r')) {
+                            mlen--;
+                        }
+                        ed.bg_job.output[mlen] = '\0';
+                        editor_set_message(&ed, "(%d) %s",
+                                           ed.bg_job.exit_code, ed.bg_job.output);
+                    }
+                } else {
+                    editor_set_message(&ed, "Command exited (%d)", ed.bg_job.exit_code);
+                }
+                need_draw = true;
+            }
+        }
+
+        if (!(fds[0].revents & POLLIN)) {
+            continue;
         }
 
         ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));

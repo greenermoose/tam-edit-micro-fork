@@ -35,6 +35,17 @@ typedef struct {
     char clipboard[32];
     bool syntax;
     int  detectlimit;
+    char encoding[64];
+    bool ignorecase;
+    bool incsearch;
+    bool hlsearch;
+    bool mkparents;
+    int  scrollmargin;
+    bool tabmovement;
+    bool smartpaste;
+    bool overwrite;
+    char reload[16];
+    char helpsplit[16];
 } config_t;
 
 typedef struct custom_keybind {
@@ -52,10 +63,18 @@ bool config_load(config_t *cfg, custom_keybind_t **kb_head);
 bool config_load_file(const char *path, config_t *cfg, custom_keybind_t **kb_head);
 bool config_set(config_t *cfg, const char *name, const char *value);
 bool config_get(const config_t *cfg, const char *name, char *buf, size_t buflen);
+bool config_get_default(const char *name, char *buf, size_t buflen);
+const char *const *config_option_names(size_t *out_count);
 
-/* Key parsing helper: parses "Alt-w", "Ctrl-s", "CtrlPageUp", "MouseLeftRelease", etc. */
+bool config_save_setting(const char *name, const char *value);
+bool config_save_binding(const char *key_str, const char *action_str);
+bool config_remove_binding(const char *key_str);
+
+/* Key parsing & formatting helpers */
 bool keybind_parse_string(const char *str, tam_key_type_t *type_out,
                           uint32_t *cp_out, unsigned *mods_out);
+void keybind_format_string(tam_key_type_t type, uint32_t cp, unsigned mods,
+                           char *buf, size_t buflen);
 
 /* --check-config implementation */
 bool config_check(const char *path, FILE *out);

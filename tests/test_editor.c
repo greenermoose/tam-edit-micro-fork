@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define CHECK(cond)                                                          \
@@ -285,10 +286,17 @@ static void test_save_without_path(void)
 void test_milestone1_run(void);
 int  run_milestone2_tests(void);
 int  run_milestone3_tests(void);
+int  run_milestone4_tests(void);
 
 int main(void)
 {
     setlocale(LC_CTYPE, "");
+
+    char test_cfg_dir[256];
+    snprintf(test_cfg_dir, sizeof(test_cfg_dir), "/tmp/tam-edit-test-cfg-%ld",
+             (long)getpid());
+    mkdir(test_cfg_dir, 0755);
+    setenv("TAM_EDIT_CONFIG_HOME", test_cfg_dir, 1);
 
     printf("tam-edit editor tests\n");
     test_load_split();
@@ -306,6 +314,11 @@ int main(void)
     test_milestone1_run();
     run_milestone2_tests();
     run_milestone3_tests();
+    run_milestone4_tests();
     syntax_registry_free();
+    char ini_path[300];
+    snprintf(ini_path, sizeof(ini_path), "%s/settings.ini", test_cfg_dir);
+    unlink(ini_path);
+    rmdir(test_cfg_dir);
     return 0;
 }

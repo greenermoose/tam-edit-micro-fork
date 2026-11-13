@@ -3,6 +3,7 @@
 #include "cursor.h"
 #include "colorscheme.h"
 #include "pane.h"
+#include "search.h"
 #include "syntax.h"
 
 #include <tam.h>
@@ -83,11 +84,11 @@ static void set_cell(grid_t *g, int r, int c, uint32_t cp,
     g->cells[idx].width     = w;
 }
 
-static bool in_view_selection(const view_t *v, size_t line, size_t rune_col)
+static bool loc_in_sel(const selection_t *sel, size_t line, size_t rune_col)
 {
-    if (!v->sel.active) return false;
-    loc_t start = v->sel.anchor;
-    loc_t end   = v->sel.cursor;
+    if (!sel->active) return false;
+    loc_t start = sel->anchor;
+    loc_t end   = sel->cursor;
     if (start.line > end.line || (start.line == end.line && start.col > end.col)) {
         loc_t tmp = start;
         start = end;
@@ -97,6 +98,34 @@ static bool in_view_selection(const view_t *v, size_t line, size_t rune_col)
     if (line == start.line && rune_col < start.col) return false;
     if (line == end.line && rune_col >= end.col) return false;
     return true;
+}
+
+static bool in_view_selection(const view_t *v, size_t line, size_t rune_col)
+{
+    if (loc_in_sel(&v->sel, line, rune_col)) return true;
+    for (size_t i = 0; i < v->extra_count; i++) {
+        if (loc_in_sel(&v->extra_cursors[i].sel, line, rune_col)) return true;
+    }
+    return false;
+}
+
+static bool is_extra_cursor_at(const view_t *v, size_t line, size_t rune_col)
+{
+    for (size_t i = 0; i < v->extra_count; i++) {
+        if (v->extra_cursors[i].cx_line == line &&
+            v->extra_cursors[i].cx_col == rune_col) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool byte_in_matches(const tam_regex_match_t *ms, size_t count, size_t byte_off)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (byte_off >= ms[i].start && byte_off < ms[i].end) return true;
+    }
+    return false;
 }
 
 int render_text_rows(const tam_tty_t *tty)
@@ -192,11 +221,18 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
     int text_cols = v->w - gw;
     if (text_cols < 1) text_cols = 1;
 
-    /* Vertical scroll clamping */
+    /* Vertical scroll clamping with scrollmargin */
+    int sm = ed->config.scrollmargin;
+    if (sm < 0) sm = 0;
+    if (text_rows > 1 && sm * 2 >= text_rows) sm = (text_rows - 1) / 2;
+    size_t smu = (size_t)sm;
+
     if (!v->softwrap) {
-        if (v->cx_line < v->top_line) v->top_line = v->cx_line;
-        if (v->cx_line >= v->top_line + (size_t)text_rows) {
-            v->top_line = v->cx_line - (size_t)text_rows + 1;
+        if (v->cx_line < v->top_line + smu) {
+            v->top_line = (v->cx_line > smu) ? (v->cx_line - smu) : 0;
+        }
+        if (v->cx_line + smu >= v->top_line + (size_t)text_rows) {
+            v->top_line = v->cx_line + smu - (size_t)text_rows + 1;
         }
 
         /* Horizontal scroll clamping */
@@ -212,12 +248,17 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
         }
     } else {
         /* Softwrap vertical scrolling: ensure current line is visible */
-        if (v->cx_line < v->top_line) v->top_line = v->cx_line;
-        if (v->cx_line >= v->top_line + (size_t)text_rows) {
-            v->top_line = v->cx_line - (size_t)text_rows + 1;
+        if (v->cx_line < v->top_line + smu) {
+            v->top_line = (v->cx_line > smu) ? (v->cx_line - smu) : 0;
+        }
+        if (v->cx_line + smu >= v->top_line + (size_t)text_rows) {
+            v->top_line = v->cx_line + smu - (size_t)text_rows + 1;
         }
         v->left_col = 0;
     }
+
+    style_t hl_style = colorscheme_get(&ed->colorscheme, "hlsearch");
+    bool do_hl = (v == ed->active_view && ed->config.hlsearch && ed->search.query[0] != '\0');
 
     /* Advance incremental syntax states up through the visible viewport */
     if (b->syntax_enabled && b->syntax_def != NULL && text_rows > 0) {
@@ -236,6 +277,8 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
             bool is_cur_line = (v == ed->active_view && line_idx == v->cx_line);
             size_t syn_runes = 0;
             const uint16_t *syn_groups = buffer_syntax_get_line_groups(b, line_idx, &syn_runes);
+            tam_regex_match_t hl_matches[64];
+            size_t hl_count = do_hl ? search_line_matches(ed, line_idx, hl_matches, 64) : 0;
 
             /* Paint gutter line number */
             if (gw > 0) {
@@ -273,7 +316,16 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                                       syn_groups, syn_runes, rune_col,
                                       &cell_fg, &cell_bg, &attr);
 
-                    if (in_view_selection(v, line_idx, rune_col)) {
+                    if (hl_count > 0 && byte_in_matches(hl_matches, hl_count, i)) {
+                        if (hl_style.fg != COLOR_DEFAULT) cell_fg = hl_style.fg;
+                        if (hl_style.bg != COLOR_DEFAULT) cell_bg = hl_style.bg;
+                        if (hl_style.fg == COLOR_DEFAULT && hl_style.bg == COLOR_DEFAULT) {
+                            attr |= ATTR_REVERSE;
+                        }
+                    }
+
+                    if (in_view_selection(v, line_idx, rune_col) ||
+                        is_extra_cursor_at(v, line_idx, rune_col)) {
                         attr |= ATTR_REVERSE;
                     }
 
@@ -292,11 +344,16 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                     rune_col++;
                 }
 
-                /* Clear remaining line columns */
+                /* Clear remaining line columns (draw secondary cursor if at EOL) */
+                bool eol_cur = (i == len && is_extra_cursor_at(v, line_idx, rune_col));
                 int sc = visual - (int)v->left_col;
                 if (sc < 0) sc = 0;
                 for (; sc < text_cols; sc++) {
-                    set_cell(g, r, content_x + sc, ' ', def_style.fg, row_bg, def_style.attr, 1);
+                    uint16_t eol_attr = def_style.attr;
+                    if (eol_cur && visual >= (int)v->left_col && sc == visual - (int)v->left_col) {
+                        eol_attr |= ATTR_REVERSE;
+                    }
+                    set_cell(g, r, content_x + sc, ' ', def_style.fg, row_bg, eol_attr, 1);
                 }
                 screen_r++;
             } else {
@@ -337,7 +394,16 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                                           syn_groups, syn_runes, rune_col,
                                           &cell_fg, &cell_bg, &attr);
 
-                        if (in_view_selection(v, line_idx, rune_col)) {
+                        if (hl_count > 0 && byte_in_matches(hl_matches, hl_count, i)) {
+                            if (hl_style.fg != COLOR_DEFAULT) cell_fg = hl_style.fg;
+                            if (hl_style.bg != COLOR_DEFAULT) cell_bg = hl_style.bg;
+                            if (hl_style.fg == COLOR_DEFAULT && hl_style.bg == COLOR_DEFAULT) {
+                                attr |= ATTR_REVERSE;
+                            }
+                        }
+
+                        if (in_view_selection(v, line_idx, rune_col) ||
+                            is_extra_cursor_at(v, line_idx, rune_col)) {
                             attr |= ATTR_REVERSE;
                         }
 
@@ -356,8 +422,12 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                         rune_col++;
                     }
 
+                    bool eol_cur = (sub + 1 == sublines && is_extra_cursor_at(v, line_idx, rune_col));
+                    int eol_sc = visual;
                     for (; visual < text_cols; visual++) {
-                        set_cell(g, r_sub, content_x + visual, ' ', def_style.fg, row_bg, def_style.attr, 1);
+                        uint16_t eol_attr = def_style.attr;
+                        if (eol_cur && visual == eol_sc) eol_attr |= ATTR_REVERSE;
+                        set_cell(g, r_sub, content_x + visual, ' ', def_style.fg, row_bg, eol_attr, 1);
                     }
                     screen_r++;
                 }
@@ -393,15 +463,25 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
     if (base != NULL) base++;
     else base = name;
 
-    char left_txt[128];
-    snprintf(left_txt, sizeof(left_txt), " %s%s", base, b->dirty ? " [+]" : "");
+    char left_txt[160];
+    snprintf(left_txt, sizeof(left_txt), " %s%s%s%s",
+             base,
+             b->dirty ? " [+]" : "",
+             b->readonly ? " [RO]" : "",
+             (is_active_view && ed->config.overwrite) ? " [OVR]" : "");
 
-    char right_txt[96];
+    char right_txt[256];
+    const char *enc = b->encoding[0] ? b->encoding : "utf-8";
+    char cur_extra[24] = "";
+    if (v->extra_count > 0) {
+        snprintf(cur_extra, sizeof(cur_extra), " (%zu cursors)", 1 + v->extra_count);
+    }
     if (b->filetype[0] != '\0' && strcmp(b->filetype, "unknown") != 0) {
-        snprintf(right_txt, sizeof(right_txt), "%s | %zu:%zu ",
-                 b->filetype, v->cx_line + 1, v->cx_col + 1);
+        snprintf(right_txt, sizeof(right_txt), "%s | %s | %zu:%zu%s ",
+                 b->filetype, enc, v->cx_line + 1, v->cx_col + 1, cur_extra);
     } else {
-        snprintf(right_txt, sizeof(right_txt), "%zu:%zu ", v->cx_line + 1, v->cx_col + 1);
+        snprintf(right_txt, sizeof(right_txt), "%s | %zu:%zu%s ",
+                 enc, v->cx_line + 1, v->cx_col + 1, cur_extra);
     }
 
     int l_len = (int)strlen(left_txt);

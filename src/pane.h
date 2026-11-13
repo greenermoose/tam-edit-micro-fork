@@ -17,6 +17,13 @@ typedef struct {
     loc_t cursor;
     bool  active;
 } selection_t;
+
+typedef struct {
+    size_t      cx_line;
+    size_t      cx_col;
+    size_t      goal_col;
+    selection_t sel;
+} cursor_t;
 #endif
 
 typedef struct buffer buffer_t;
@@ -30,6 +37,9 @@ typedef struct view {
     size_t      left_col;
     int         top_subline; /* 0-based visual row offset for softwrap */
     selection_t sel;
+    cursor_t   *extra_cursors;
+    size_t      extra_count;
+    size_t      extra_cap;
     int         x;
     int         y;
     int         w;
@@ -92,6 +102,9 @@ tab_t      *tab_new(view_t *v);
 void        tab_free(tab_t *tab);
 const char *tab_get_title(const tab_t *tab, char *buf, size_t buflen);
 bool        tab_is_dirty(const tab_t *tab);
+
+/* Tab list helpers */
+void        tab_list_move(tab_list_t *tl, size_t from, size_t to);
 
 /* Tab list operations */
 void    tab_list_init(tab_list_t *tl);

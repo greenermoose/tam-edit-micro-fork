@@ -2,7 +2,7 @@
 
 **Last update:** 2026-11-13
 **Owner:** Fred
-**Status:** version 0.3.0, Milestone 3 complete: syntax highlighting
+**Status:** version 0.4.0, Milestone 4 complete: full editing, search, encodings, shell, and multi-cursor
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
@@ -11,6 +11,41 @@ This roadmap describes how tam-edit moves from Go to C11 and links only
 usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
+
+**2026-11-13 — version 0.4.0 (Milestone 4 exit: full editing, search, encodings, shell & multi-cursor).**
+Phase 6 delivers the full non-plugin micro feature set in C11 while linking only
+libc and libtam 0.7.0:
+- Regex captures & search/replace (`src/regex.{h,c}`, `src/search.{h,c}`):
+  `(...)` and `(?P<name>...)` capture groups, `$0`/`$1`/`${1}`/`$name`/`${name}`/`$$`
+  replacement templates, `ignorecase`, `incsearch` with live cursor preview and
+  `Esc` restore, `hlsearch` match highlighting, literal find (`Alt-F`), and
+  interactive `replace` / grouped-undo `replaceall`.
+- Encodings & file lifecycle (`src/encoding.{h,c}`, `src/buffer.{h,c}`):
+  glibc `iconv` decoding/encoding (no `-liconv`), BOM (`UTF-8`, `UTF-16LE`,
+  `UTF-16BE`) + UTF-8 + configured encoding + `windows-1252`/`iso-8859-1`
+  fallback detection, strict save on `EILSEQ`, `reopen`, `mkparents`,
+  `rmtrailingws`, `eofnewline`, `retab`, and external `reload` (`prompt`/`auto`/`disabled`).
+- Shell execution & completion (`src/shell.{h,c}`, `src/complete.{h,c}`,
+  `src/main.c`): non-blocking background `run` via `poll()` with 30s timeout,
+  bounded synchronous `textfilter`, foreground TTY suspend/restore (`run -i` /
+  `ShellMode`), and `Tab`/`Shift-Tab` completion for commands, options, values,
+  encodings, colorschemes, filetypes, help topics, and filesystem paths.
+- Multi-cursor & editing parity (`src/editor.{h,c}`, `src/cursor.c`,
+  `src/actions.c`, `src/prompt.c`, `src/render.c`, `data/help_data.{h,c}`):
+  `SpawnMultiCursor` (`Alt-N`), `SkipMultiCursor` (`Alt-M`),
+  `RemoveMultiCursor` (`Alt-X`), `RemoveAllMultiCursors` (`Esc`),
+  `SpawnMultiCursorUp`/`Down` (`Alt-Shift-Up`/`Down`),
+  `SpawnMultiCursorSelect` (`Alt-C`), `Ctrl-LeftClick` cursor toggle,
+  `MoveLinesUp`/`Down`, `DeleteLine`, `Duplicate`, `ToggleOverwriteMode`,
+  `scrollmargin`, `tabmovement`, `smartpaste`, `bind`/`unbind`/`show`/`showkey`/`reset`,
+  `tabmove`/`tabswitch`, and embedded `help` topics.
+- Verification: all unit tests (Editor, Milestone 1–4) pass under `-O2` and
+  `-fsanitize=address,undefined` with zero warnings or leaks; 8 PTY/CLI smoke
+  tests pass; `make check-deps` confirms libc-only linkage; `build/tam-edit` =
+  1.5 MB unstripped (`<= 5 MB`).
+
+Not yet present: Phase 7 parity audit, fuzzing, stress tests, man page/desktop
+packaging, and `v1.0.0` release gate.
 
 **2026-11-13 — version 0.3.0 (Milestone 3 exit: syntax highlighting).**
 Phase 5 delivers native UTF-8 syntax highlighting with embedded runtime tables,

@@ -313,6 +313,7 @@ static void test_all_embedded_colorschemes_and_prompt(void)
     CHECK(ed.active_view->buf->syntax_enabled == true);
     prompt_execute_command(&ed, "set syntax false");
     CHECK(ed.config.syntax == false);
+    prompt_execute_command(&ed, "set syntax true");
     editor_free(&ed);
 
     printf("  [PASS] test_all_embedded_colorschemes_and_prompt (%zu schemes)\n",

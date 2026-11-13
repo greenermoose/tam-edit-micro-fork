@@ -100,6 +100,37 @@ static undo_group_t *create_group(editor_t *ed, int64_t now)
     return grp;
 }
 
+void undo_begin_group(editor_t *ed)
+{
+    if (!ed) return;
+    if (ed->undo_stack.explicit_depth == 0) {
+        create_group(ed, get_time_ms());
+        ed->undo_stack.explicit_group = true;
+    }
+    ed->undo_stack.explicit_depth++;
+}
+
+void undo_end_group(editor_t *ed)
+{
+    if (!ed || ed->undo_stack.explicit_depth <= 0) return;
+    ed->undo_stack.explicit_depth--;
+    if (ed->undo_stack.explicit_depth > 0) return;
+
+    ed->undo_stack.explicit_group = false;
+    undo_group_t *grp = ed->undo_stack.head;
+    if (grp) {
+        if (grp->count == 0) {
+            ed->undo_stack.head = grp->next;
+            ed->undo_stack.count--;
+            free(grp->deltas);
+            free(grp);
+        } else {
+            grp->cursor_after = (loc_t){ed->cx_line, ed->cx_col};
+            grp->time_ms = 0; /* Do not auto-merge subsequent edits into this explicit group */
+        }
+    }
+}
+
 void undo_record_insert(editor_t *ed, size_t line, size_t col,
                         const char *text, size_t len)
 {
@@ -107,7 +138,9 @@ void undo_record_insert(editor_t *ed, size_t line, size_t col,
     undo_group_t *grp = ed->undo_stack.head;
 
     bool merge = false;
-    if (grp != NULL && (now - grp->time_ms < 1000) && grp->count > 0) {
+    if (ed->undo_stack.explicit_group && grp != NULL) {
+        merge = true;
+    } else if (grp != NULL && (now - grp->time_ms < 1000) && grp->count > 0) {
         if (grp->deltas[grp->count - 1].type == DELTA_INSERT) {
             if (line == grp->cursor_after.line && col == grp->cursor_after.col) {
                 merge = true;
@@ -143,7 +176,9 @@ void undo_record_remove(editor_t *ed, size_t line, size_t col,
     undo_group_t *grp = ed->undo_stack.head;
 
     bool merge = false;
-    if (grp != NULL && (now - grp->time_ms < 1000) && grp->count > 0) {
+    if (ed->undo_stack.explicit_group && grp != NULL) {
+        merge = true;
+    } else if (grp != NULL && (now - grp->time_ms < 1000) && grp->count > 0) {
         if (grp->deltas[grp->count - 1].type == DELTA_REMOVE) {
             if (grp->cursor_after.line == line &&
                 (grp->cursor_after.col == col + edit_line_runes(text, len) ||

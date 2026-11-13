@@ -7,7 +7,7 @@ override CFLAGS += -std=c11 -g -Isrc -Idata -D_POSIX_C_SOURCE=200809L -D_GNU_SOU
 LDFLAGS ?=
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
-VERSION := 0.3.0
+VERSION := 0.4.0
 PREFIX ?= $(HOME)/.local/dev
 
 # Look for libtam in $(PREFIX)/lib/pkgconfig if not already in system search path
@@ -22,12 +22,12 @@ BIN = $(BUILD)/tam-edit
 TEST_BIN = $(BUILD)/test_editor
 TEST_ASAN_BIN = $(BUILD)/test_asan
 
-CORE_SRCS = src/editor.c src/cursor.c src/undo.c src/actions.c src/prompt.c src/clipboard.c src/render.c src/buffer.c src/pane.c src/config.c src/colorscheme.c src/regex.c src/syntax.c
-DATA_SRCS = data/syntax_data.c data/colorschemes_data.c
+CORE_SRCS = src/editor.c src/cursor.c src/undo.c src/actions.c src/prompt.c src/clipboard.c src/render.c src/buffer.c src/pane.c src/config.c src/colorscheme.c src/regex.c src/syntax.c src/encoding.c src/shell.c src/search.c src/complete.c
+DATA_SRCS = data/syntax_data.c data/colorschemes_data.c data/help_data.c
 SRCS = src/main.c $(CORE_SRCS)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
 DATA_OBJS = $(patsubst data/%.c,$(BUILD)/data_%.o,$(DATA_SRCS))
-TEST_SRCS = $(CORE_SRCS) $(DATA_SRCS) tests/test_editor.c tests/test_milestone1.c tests/test_milestone2.c tests/test_milestone3.c
+TEST_SRCS = $(CORE_SRCS) $(DATA_SRCS) tests/test_editor.c tests/test_milestone1.c tests/test_milestone2.c tests/test_milestone3.c tests/test_milestone4.c
 
 .PHONY: all test test-asan test-pty clean install uninstall check-deps gen-data
 

@@ -27,6 +27,7 @@ view_t *view_new(buffer_t *buf)
 void view_free(view_t *v)
 {
     if (v == NULL) return;
+    free(v->extra_cursors);
     buffer_unref(v->buf);
     free(v);
 }
@@ -357,4 +358,17 @@ void tab_list_prev(tab_list_t *tl)
     if (tl->count > 1) {
         tl->active = (tl->active + tl->count - 1) % tl->count;
     }
+}
+
+void tab_list_move(tab_list_t *tl, size_t from, size_t to)
+{
+    if (!tl || from >= tl->count || to >= tl->count || from == to) return;
+    tab_t *moving = tl->tabs[from];
+    if (from < to) {
+        memmove(tl->tabs + from, tl->tabs + from + 1, (to - from) * sizeof(tab_t *));
+    } else {
+        memmove(tl->tabs + to + 1, tl->tabs + to, (from - to) * sizeof(tab_t *));
+    }
+    tl->tabs[to] = moving;
+    tl->active = to;
 }

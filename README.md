@@ -21,19 +21,21 @@ and documentation to the features being ported.
 | Branch | Tree | Build | Status |
 | --- | --- | --- | --- |
 | `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, still usable |
-| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.3.0: syntax highlighting |
+| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.4.0: full editing, search, encodings, shell, multi-cursor |
 
 New work happens on `c11`. [ROADMAP.md](ROADMAP.md) holds the phase plan and
 the milestone definitions. The Go tree stays on `master`, and on `c11` until
 the C version reaches the 1.0.0 parity gate.
 
-Version 0.3.0 (Milestone 3) delivers native C11 syntax highlighting. `make` builds
-`build/tam-edit`, which links only libc and libtam 0.7.0. In addition to Milestone 2
-features, it embeds all 158 micro syntax definitions and 25 colorschemes in C tables,
-implements an in-tree UTF-8 Pike-VM regex engine (`src/regex.c`), micro-parity
-incremental line-state highlighting (`src/syntax.c`) with filename/header/signature
-filetype detection, user `~/.config/tam-edit/syntax/*.yaml` override parsing,
-`setlocal filetype` / `toggle syntax` commands, and `--dump-syntax` parity output.
+Version 0.4.0 (Milestone 4) delivers the full non-plugin micro feature set in
+C11 while linking only libc and libtam 0.7.0. In addition to Milestone 3
+features, it adds regex capture groups (`(...)`, `(?P<name>...)`) with
+`$0`/`$1`/`${name}` replacement templates, `incsearch`/`hlsearch`/`ignorecase`
+and interactive `replace`/`replaceall`, `iconv` legacy encodings and BOM
+detection, background `run`, `textfilter`, interactive `run -i`, multi-cursor
+editing (`Alt-N`/`Alt-M`/`Alt-X`/`Alt-P`/`Alt-C`, `Alt-Shift-Up/Down`,
+`Ctrl-LeftClick`), `retab`, `bind`/`unbind`/`show`/`showkey`/`reset`, embedded
+`help` topics, and command/path/option tab completion.
 
 ## Versioning
 

@@ -43,13 +43,21 @@ static size_t cur_line_runes(const editor_t *ed)
                            ed->doc.lens[ed->cx_line]);
 }
 
+static void clamp_one(const editor_t *ed, size_t *line, size_t *col)
+{
+    if (ed->doc.count == 0) return;
+    if (*line >= ed->doc.count) *line = ed->doc.count - 1;
+    size_t runes = edit_line_runes(ed->doc.lines[*line], ed->doc.lens[*line]);
+    if (*col > runes) *col = runes;
+}
+
 void cursor_clamp(editor_t *ed)
 {
     if (ed->doc.count == 0) return;
-    if (ed->cx_line >= ed->doc.count) ed->cx_line = ed->doc.count - 1;
-
-    size_t runes = cur_line_runes(ed);
-    if (ed->cx_col > runes) ed->cx_col = runes;
+    clamp_one(ed, &ed->cx_line, &ed->cx_col);
+    for (size_t i = 0; i < ed->extra_count; i++) {
+        clamp_one(ed, &ed->extra_cursors[i].cx_line, &ed->extra_cursors[i].cx_col);
+    }
 }
 
 static void update_selection(editor_t *ed, bool select)
@@ -65,11 +73,9 @@ static void update_selection(editor_t *ed, bool select)
     }
 }
 
-void cursor_move(editor_t *ed, long dx, long dy, bool select)
+static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
 {
     if (!select && ed->sel.active && dx != 0 && dy == 0) {
-        /* When selection is active and moving with non-shift arrow,
-         * move to the start/end of the selection. */
         loc_t start, end;
         selection_get_range(ed, &start, &end);
         if (dx < 0) {
@@ -82,6 +88,34 @@ void cursor_move(editor_t *ed, long dx, long dy, bool select)
         ed->goal_col = ed->cx_col;
         ed->sel.active = false;
         return;
+    }
+
+    if (dy == 0 && (dx == -1 || dx == 1) && ed->config.tabmovement &&
+        ed->config.tabstospaces && ed->config.tabsize > 1 && ed->cx_line < ed->doc.count) {
+        const char *line = ed->doc.lines[ed->cx_line];
+        size_t len = ed->doc.lens[ed->cx_line];
+        size_t tab = (size_t)ed->config.tabsize;
+        bool in_indent = true;
+        for (size_t c = 0; c < ed->cx_col && c < len; c++) {
+            if (line[c] != ' ') {
+                in_indent = false;
+                break;
+            }
+        }
+        if (in_indent) {
+            if (dx < 0 && ed->cx_col >= tab) {
+                size_t step = (ed->cx_col % tab == 0) ? tab : (ed->cx_col % tab);
+                dx = -(long)step;
+            } else if (dx > 0) {
+                size_t step = tab - (ed->cx_col % tab);
+                size_t runes = edit_line_runes(line, len);
+                bool all_spaces = (ed->cx_col + step <= runes);
+                for (size_t k = 0; all_spaces && k < step; k++) {
+                    if (line[ed->cx_col + k] != ' ') all_spaces = false;
+                }
+                if (all_spaces) dx = (long)step;
+            }
+        }
     }
 
     if (dy != 0) {
@@ -179,7 +213,33 @@ void cursor_move(editor_t *ed, long dx, long dy, bool select)
     update_selection(ed, select);
 }
 
-void cursor_home(editor_t *ed, bool select)
+static void swap_primary_with_extra(editor_t *ed, size_t idx)
+{
+    cursor_t tmp = {ed->cx_line, ed->cx_col, ed->goal_col, ed->sel};
+    ed->cx_line  = ed->extra_cursors[idx].cx_line;
+    ed->cx_col   = ed->extra_cursors[idx].cx_col;
+    ed->goal_col = ed->extra_cursors[idx].goal_col;
+    ed->sel      = ed->extra_cursors[idx].sel;
+    ed->extra_cursors[idx] = tmp;
+}
+
+void cursor_move(editor_t *ed, long dx, long dy, bool select)
+{
+    cursor_move_single(ed, dx, dy, select);
+    if (ed->extra_count > 0) {
+        size_t n = ed->extra_count;
+        ed->extra_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            swap_primary_with_extra(ed, i);
+            cursor_move_single(ed, dx, dy, select);
+            swap_primary_with_extra(ed, i);
+        }
+        ed->extra_count = n;
+        editor_merge_cursors(ed);
+    }
+}
+
+static void cursor_home_single(editor_t *ed, bool select)
 {
     /* Toggle between first non-whitespace and col 0 */
     size_t runes = cur_line_runes(ed);
@@ -204,11 +264,43 @@ void cursor_home(editor_t *ed, bool select)
     update_selection(ed, select);
 }
 
-void cursor_end(editor_t *ed, bool select)
+void cursor_home(editor_t *ed, bool select)
+{
+    cursor_home_single(ed, select);
+    if (ed->extra_count > 0) {
+        size_t n = ed->extra_count;
+        ed->extra_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            swap_primary_with_extra(ed, i);
+            cursor_home_single(ed, select);
+            swap_primary_with_extra(ed, i);
+        }
+        ed->extra_count = n;
+        editor_merge_cursors(ed);
+    }
+}
+
+static void cursor_end_single(editor_t *ed, bool select)
 {
     ed->cx_col = cur_line_runes(ed);
     ed->goal_col = ed->cx_col;
     update_selection(ed, select);
+}
+
+void cursor_end(editor_t *ed, bool select)
+{
+    cursor_end_single(ed, select);
+    if (ed->extra_count > 0) {
+        size_t n = ed->extra_count;
+        ed->extra_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            swap_primary_with_extra(ed, i);
+            cursor_end_single(ed, select);
+            swap_primary_with_extra(ed, i);
+        }
+        ed->extra_count = n;
+        editor_merge_cursors(ed);
+    }
 }
 
 void cursor_page(editor_t *ed, long pages, int text_rows, bool select)
@@ -219,6 +311,7 @@ void cursor_page(editor_t *ed, long pages, int text_rows, bool select)
 
 void cursor_start(editor_t *ed, bool select)
 {
+    ed->extra_count = 0;
     ed->cx_line = 0;
     ed->cx_col = 0;
     ed->goal_col = 0;
@@ -227,6 +320,7 @@ void cursor_start(editor_t *ed, bool select)
 
 void cursor_end_doc(editor_t *ed, bool select)
 {
+    ed->extra_count = 0;
     if (ed->doc.count > 0) {
         ed->cx_line = ed->doc.count - 1;
         ed->cx_col = cur_line_runes(ed);
@@ -235,7 +329,7 @@ void cursor_end_doc(editor_t *ed, bool select)
     update_selection(ed, select);
 }
 
-void cursor_word_left(editor_t *ed, bool select)
+static void cursor_word_left_single(editor_t *ed, bool select)
 {
     if (ed->cx_col == 0) {
         if (ed->cx_line > 0) {
@@ -271,7 +365,23 @@ void cursor_word_left(editor_t *ed, bool select)
     update_selection(ed, select);
 }
 
-void cursor_word_right(editor_t *ed, bool select)
+void cursor_word_left(editor_t *ed, bool select)
+{
+    cursor_word_left_single(ed, select);
+    if (ed->extra_count > 0) {
+        size_t n = ed->extra_count;
+        ed->extra_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            swap_primary_with_extra(ed, i);
+            cursor_word_left_single(ed, select);
+            swap_primary_with_extra(ed, i);
+        }
+        ed->extra_count = n;
+        editor_merge_cursors(ed);
+    }
+}
+
+static void cursor_word_right_single(editor_t *ed, bool select)
 {
     size_t runes = cur_line_runes(ed);
     if (ed->cx_col >= runes) {
@@ -306,9 +416,26 @@ void cursor_word_right(editor_t *ed, bool select)
     update_selection(ed, select);
 }
 
+void cursor_word_right(editor_t *ed, bool select)
+{
+    cursor_word_right_single(ed, select);
+    if (ed->extra_count > 0) {
+        size_t n = ed->extra_count;
+        ed->extra_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            swap_primary_with_extra(ed, i);
+            cursor_word_right_single(ed, select);
+            swap_primary_with_extra(ed, i);
+        }
+        ed->extra_count = n;
+        editor_merge_cursors(ed);
+    }
+}
+
 void cursor_select_all(editor_t *ed)
 {
     if (ed->doc.count == 0) return;
+    ed->extra_count = 0;
     ed->sel.active = true;
     ed->sel.anchor = (loc_t){0, 0};
     ed->cx_line    = ed->doc.count - 1;
@@ -320,6 +447,9 @@ void cursor_select_all(editor_t *ed)
 void cursor_deselect(editor_t *ed)
 {
     ed->sel.active = false;
+    for (size_t i = 0; i < ed->extra_count; i++) {
+        ed->extra_cursors[i].sel.active = false;
+    }
 }
 
 bool selection_get_range(const editor_t *ed, loc_t *start, loc_t *end)

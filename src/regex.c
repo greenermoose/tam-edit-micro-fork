@@ -220,7 +220,8 @@ typedef enum {
     AST_NWB,
     AST_CONCAT,
     AST_ALT,
-    AST_REPEAT
+    AST_REPEAT,
+    AST_CAPTURE
 } ast_kind_t;
 
 typedef struct {
@@ -228,6 +229,7 @@ typedef struct {
     int        flags;
     uint32_t   cp;
     uint32_t   class_idx;
+    uint32_t   group_idx;
     int32_t    left;
     int32_t    right;
     int        min_rep;
@@ -245,13 +247,14 @@ typedef enum {
     OP_EOL,
     OP_WB,
     OP_NWB,
+    OP_SAVE,
     OP_MATCH
 } opcode_t;
 
 typedef struct {
     opcode_t op;
     uint8_t  flags;
-    uint32_t arg;  /* codepoint or class_idx or jmp target */
+    uint32_t arg;  /* codepoint or class_idx or jmp target or save slot */
     uint32_t arg2; /* second target for OP_SPLIT */
 } insn_t;
 
@@ -262,6 +265,8 @@ struct tam_regex {
     char_class_t *classes;
     size_t        class_count;
     size_t        class_cap;
+    size_t        num_groups; /* capturing groups 1..num_groups (not counting group 0) */
+    char          group_names[TAM_REGEX_MAX_CAPTURES][64];
 };
 
 /* ========================================================================= */
@@ -282,6 +287,8 @@ typedef struct {
     char_class_t *classes;
     size_t        class_count;
     size_t        class_cap;
+    size_t        num_groups;
+    char          group_names[TAM_REGEX_MAX_CAPTURES][64];
     char         *errbuf;
     size_t        errlen;
     bool          error;
@@ -684,6 +691,51 @@ static int32_t parse_atom(parser_t *p, int *flags_io, bool *was_flag_directive)
                 p->pos++;
                 return sub;
             }
+            if (p->pos + 1 < p->len && p->pat[p->pos] == 'P' && p->pat[p->pos + 1] == '<') {
+                p->pos += 2;
+                size_t name_start = p->pos;
+                while (p->pos < p->len && p->pat[p->pos] != '>') {
+                    char nc = p->pat[p->pos];
+                    if (!((nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z') ||
+                          (nc >= '0' && nc <= '9') || nc == '_')) {
+                        set_error(p, "invalid named group character");
+                        return -1;
+                    }
+                    p->pos++;
+                }
+                size_t name_len = p->pos - name_start;
+                if (name_len == 0 || p->pos >= p->len || p->pat[p->pos] != '>') {
+                    set_error(p, "unterminated named group");
+                    return -1;
+                }
+                p->pos++; /* skip '>' */
+
+                uint32_t gid = 0;
+                if (p->num_groups + 1 < TAM_REGEX_MAX_CAPTURES) {
+                    gid = (uint32_t)(++p->num_groups);
+                    size_t copy_len = name_len < 63 ? name_len : 63;
+                    memcpy(p->group_names[gid], p->pat + name_start, copy_len);
+                    p->group_names[gid][copy_len] = '\0';
+                }
+
+                p->depth++;
+                int32_t sub = parse_alt(p, *flags_io);
+                p->depth--;
+                if (p->error) return -1;
+                if (p->pos >= p->len || p->pat[p->pos] != ')') {
+                    set_error(p, "unterminated named group");
+                    return -1;
+                }
+                p->pos++;
+                if (gid > 0) {
+                    int32_t cap = new_node(p, AST_CAPTURE, *flags_io);
+                    if (cap < 0) return -1;
+                    p->nodes[cap].left = sub;
+                    p->nodes[cap].group_idx = gid;
+                    return cap;
+                }
+                return sub;
+            }
             int sub_flags = *flags_io;
             bool has_colon = false;
             if (!parse_flag_changes(p, &sub_flags, &has_colon)) {
@@ -708,6 +760,11 @@ static int32_t parse_atom(parser_t *p, int *flags_io, bool *was_flag_directive)
             return sub;
         }
 
+        uint32_t gid = 0;
+        if (p->num_groups + 1 < TAM_REGEX_MAX_CAPTURES) {
+            gid = (uint32_t)(++p->num_groups);
+        }
+
         p->depth++;
         int32_t sub = parse_alt(p, *flags_io);
         p->depth--;
@@ -717,6 +774,13 @@ static int32_t parse_atom(parser_t *p, int *flags_io, bool *was_flag_directive)
             return -1;
         }
         p->pos++;
+        if (gid > 0) {
+            int32_t cap = new_node(p, AST_CAPTURE, *flags_io);
+            if (cap < 0) return -1;
+            p->nodes[cap].left = sub;
+            p->nodes[cap].group_idx = gid;
+            return cap;
+        }
         return sub;
     }
 
@@ -1066,6 +1130,13 @@ static void compile_node(tam_regex_t *re, const ast_node_t *nodes, int32_t idx, 
         }
         break;
     }
+    case AST_CAPTURE: {
+        uint32_t slot_base = (n->group_idx - 1) * 2;
+        emit(re, OP_SAVE, 0, slot_base, 0, oom);
+        compile_node(re, nodes, n->left, oom);
+        emit(re, OP_SAVE, 0, slot_base + 1, 0, oom);
+        break;
+    }
     }
 }
 
@@ -1108,6 +1179,8 @@ tam_regex_t *tam_regex_compile(const char *pattern, int flags,
     re->classes = p.classes;
     re->class_count = p.class_count;
     re->class_cap = p.class_cap;
+    re->num_groups = p.num_groups;
+    memcpy(re->group_names, p.group_names, sizeof(re->group_names));
 
     bool oom = false;
     compile_node(re, p.nodes, root, &oom);
@@ -1120,6 +1193,17 @@ tam_regex_t *tam_regex_compile(const char *pattern, int flags,
         return NULL;
     }
     return re;
+}
+
+int tam_regex_group_index(const tam_regex_t *re, const char *name)
+{
+    if (re == NULL || name == NULL || *name == '\0') return -1;
+    for (size_t i = 1; i <= re->num_groups && i < TAM_REGEX_MAX_CAPTURES; i++) {
+        if (re->group_names[i][0] != '\0' && strcmp(re->group_names[i], name) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
 }
 
 void tam_regex_free(tam_regex_t *re)
@@ -1137,17 +1221,19 @@ void tam_regex_free(tam_regex_t *re)
 /* Pike-VM Execution                                                         */
 /* ========================================================================= */
 
-typedef struct {
-    uint32_t pc;
-    size_t   start;
-} vm_thread_t;
-
-typedef struct {
-    uint32_t pc;
-    size_t   start;
-} eps_frame_t;
-
+#define NUM_SAVE_SLOTS ((TAM_REGEX_MAX_CAPTURES - 1) * 2)
 #define STACK_SCRATCH_CAP 128
+
+typedef struct {
+    uint32_t pc;
+    size_t   start;
+} vm_fast_thread_t;
+
+typedef struct {
+    uint32_t pc;
+    size_t   start;
+    size_t   saved[NUM_SAVE_SLOTS];
+} vm_cap_thread_t;
 
 static bool eval_assertion(const insn_t *ins, size_t pos, size_t len,
                            uint32_t prev_cp, uint32_t next_cp, bool at_end)
@@ -1174,12 +1260,12 @@ static bool eval_assertion(const insn_t *ins, size_t pos, size_t len,
     }
 }
 
-static void add_thread(const tam_regex_t *re, vm_thread_t *list, size_t *list_len,
-                       uint32_t *gen, uint32_t cur_gen,
-                       uint32_t start_pc, size_t start_off,
-                       size_t pos, size_t len, uint32_t prev_cp,
-                       uint32_t next_cp, bool at_end,
-                       eps_frame_t *stk, size_t stk_cap)
+static void add_thread_fast(const tam_regex_t *re, vm_fast_thread_t *list, size_t *list_len,
+                            uint32_t *gen, uint32_t cur_gen,
+                            uint32_t start_pc, size_t start_off,
+                            size_t pos, size_t len, uint32_t prev_cp,
+                            uint32_t next_cp, bool at_end,
+                            vm_fast_thread_t *stk, size_t stk_cap)
 {
     size_t sp = 0;
     stk[sp].pc = start_pc;
@@ -1187,7 +1273,7 @@ static void add_thread(const tam_regex_t *re, vm_thread_t *list, size_t *list_le
     sp++;
 
     while (sp > 0) {
-        eps_frame_t f = stk[--sp];
+        vm_fast_thread_t f = stk[--sp];
         uint32_t pc = f.pc;
         if (pc >= re->prog_len) continue;
         if (gen[pc] == cur_gen) continue;
@@ -1203,7 +1289,6 @@ static void add_thread(const tam_regex_t *re, vm_thread_t *list, size_t *list_le
             }
             break;
         case OP_SPLIT:
-            /* Push arg2 first so arg1 pops first (higher priority) */
             if (sp < stk_cap) {
                 stk[sp].pc = ins->arg2;
                 stk[sp].start = f.start;
@@ -1211,6 +1296,13 @@ static void add_thread(const tam_regex_t *re, vm_thread_t *list, size_t *list_le
             }
             if (sp < stk_cap) {
                 stk[sp].pc = ins->arg;
+                stk[sp].start = f.start;
+                sp++;
+            }
+            break;
+        case OP_SAVE:
+            if (sp < stk_cap) {
+                stk[sp].pc = pc + 1;
                 stk[sp].start = f.start;
                 sp++;
             }
@@ -1236,26 +1328,21 @@ static void add_thread(const tam_regex_t *re, vm_thread_t *list, size_t *list_le
     }
 }
 
-bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
-                    size_t start_byte, tam_regex_match_t *out)
+static bool vm_find_fast(const tam_regex_t *re, const char *text, size_t len,
+                         size_t start_byte, tam_regex_match_t *out)
 {
-    if (re == NULL || re->prog_len == 0) return false;
-    if (text == NULL) text = "";
-    if (start_byte > len) return false;
-
     size_t n = re->prog_len;
+    vm_fast_thread_t s_clist[STACK_SCRATCH_CAP];
+    vm_fast_thread_t s_nlist[STACK_SCRATCH_CAP];
+    uint32_t         s_gen[STACK_SCRATCH_CAP];
+    vm_fast_thread_t s_stk[STACK_SCRATCH_CAP * 2];
 
-    vm_thread_t  s_clist[STACK_SCRATCH_CAP];
-    vm_thread_t  s_nlist[STACK_SCRATCH_CAP];
-    uint32_t     s_gen[STACK_SCRATCH_CAP];
-    eps_frame_t  s_stk[STACK_SCRATCH_CAP * 2];
-
-    vm_thread_t *clist = s_clist;
-    vm_thread_t *nlist = s_nlist;
-    uint32_t    *gen   = s_gen;
-    eps_frame_t *stk   = s_stk;
-    size_t       stk_cap = STACK_SCRATCH_CAP * 2;
-    bool         heap_used = false;
+    vm_fast_thread_t *clist = s_clist;
+    vm_fast_thread_t *nlist = s_nlist;
+    uint32_t         *gen   = s_gen;
+    vm_fast_thread_t *stk   = s_stk;
+    size_t            stk_cap = STACK_SCRATCH_CAP * 2;
+    bool              heap_used = false;
 
     if (n > STACK_SCRATCH_CAP) {
         clist = malloc(n * sizeof(*clist));
@@ -1274,10 +1361,8 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
     }
     memset(gen, 0, n * sizeof(*gen));
 
-    size_t clist_len = 0;
-    size_t nlist_len = 0;
+    size_t clist_len = 0, nlist_len = 0;
     uint32_t cur_gen = 1;
-
     bool has_best = false;
     tam_regex_match_t best = {0, 0};
 
@@ -1288,13 +1373,11 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
         bool at_end = (pos >= len);
         uint32_t next_cp = 0;
         size_t step_bytes = 0;
-        if (!at_end) {
-            step_bytes = utf8_next(text + pos, len - pos, &next_cp);
-        }
+        if (!at_end) step_bytes = utf8_next(text + pos, len - pos, &next_cp);
 
         if (!has_best) {
-            add_thread(re, clist, &clist_len, gen, cur_gen,
-                       0, pos, pos, len, prev_cp, next_cp, at_end, stk, stk_cap);
+            add_thread_fast(re, clist, &clist_len, gen, cur_gen,
+                            0, pos, pos, len, prev_cp, next_cp, at_end, stk, stk_cap);
         }
 
         nlist_len = 0;
@@ -1304,16 +1387,13 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
             cur_gen = 1;
         }
 
-        /* Precompute post-step context for epsilon closure into nlist */
         size_t next_pos = pos + step_bytes;
         bool next_at_end = (next_pos >= len);
         uint32_t after_cp = 0;
-        if (!next_at_end) {
-            utf8_next(text + next_pos, len - next_pos, &after_cp);
-        }
+        if (!next_at_end) utf8_next(text + next_pos, len - next_pos, &after_cp);
 
         for (size_t i = 0; i < clist_len; i++) {
-            vm_thread_t t = clist[i];
+            vm_fast_thread_t t = clist[i];
             if (has_best && t.start > best.start) break;
 
             const insn_t *ins = &re->prog[t.pc];
@@ -1321,19 +1401,16 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
                 best.start = t.start;
                 best.end   = pos;
                 has_best   = true;
-                break; /* lower-priority threads in clist cannot beat this */
+                break;
             }
-
             if (at_end) continue;
 
             bool matched = false;
             switch (ins->op) {
             case OP_CHAR:
-                if (ins->flags & TAM_REGEX_ICASE) {
-                    matched = fold_ascii_latin(next_cp) == fold_ascii_latin(ins->arg);
-                } else {
-                    matched = (next_cp == ins->arg);
-                }
+                matched = (ins->flags & TAM_REGEX_ICASE)
+                              ? (fold_ascii_latin(next_cp) == fold_ascii_latin(ins->arg))
+                              : (next_cp == ins->arg);
                 break;
             case OP_ANY:
                 matched = (ins->flags & TAM_REGEX_DOTALL) || (next_cp != '\n');
@@ -1346,19 +1423,18 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
             }
 
             if (matched) {
-                add_thread(re, nlist, &nlist_len, gen, cur_gen,
-                           t.pc + 1, t.start, next_pos, len, next_cp,
-                           after_cp, next_at_end, stk, stk_cap);
+                add_thread_fast(re, nlist, &nlist_len, gen, cur_gen,
+                                t.pc + 1, t.start, next_pos, len, next_cp,
+                                after_cp, next_at_end, stk, stk_cap);
             }
         }
 
-        vm_thread_t *tmp = clist;
+        vm_fast_thread_t *tmp = clist;
         clist = nlist;
         nlist = tmp;
         clist_len = nlist_len;
 
         if (at_end || (has_best && clist_len == 0)) break;
-
         prev_cp = next_cp;
         pos = next_pos;
     }
@@ -1369,11 +1445,243 @@ bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
         free(gen);
         free(stk);
     }
+    if (has_best && out != NULL) *out = best;
+    return has_best;
+}
+
+static void add_thread_cap(const tam_regex_t *re, vm_cap_thread_t *list, size_t *list_len,
+                           uint32_t *gen, uint32_t cur_gen,
+                           uint32_t start_pc, size_t start_off,
+                           const size_t *in_saved, size_t save_count,
+                           size_t pos, size_t len, uint32_t prev_cp,
+                           uint32_t next_cp, bool at_end,
+                           vm_cap_thread_t *stk, size_t stk_cap)
+{
+    size_t sp = 0;
+    stk[sp].pc = start_pc;
+    stk[sp].start = start_off;
+    if (in_saved != NULL) {
+        memcpy(stk[sp].saved, in_saved, save_count * sizeof(size_t));
+    } else {
+        for (size_t s = 0; s < save_count; s++) stk[sp].saved[s] = (size_t)-1;
+    }
+    sp++;
+
+    while (sp > 0) {
+        vm_cap_thread_t f = stk[--sp];
+        uint32_t pc = f.pc;
+        if (pc >= re->prog_len) continue;
+        if (gen[pc] == cur_gen) continue;
+        gen[pc] = cur_gen;
+
+        const insn_t *ins = &re->prog[pc];
+        switch (ins->op) {
+        case OP_JMP:
+            if (sp < stk_cap) {
+                stk[sp].pc = ins->arg;
+                stk[sp].start = f.start;
+                memcpy(stk[sp].saved, f.saved, save_count * sizeof(size_t));
+                sp++;
+            }
+            break;
+        case OP_SPLIT:
+            if (sp < stk_cap) {
+                stk[sp].pc = ins->arg2;
+                stk[sp].start = f.start;
+                memcpy(stk[sp].saved, f.saved, save_count * sizeof(size_t));
+                sp++;
+            }
+            if (sp < stk_cap) {
+                stk[sp].pc = ins->arg;
+                stk[sp].start = f.start;
+                memcpy(stk[sp].saved, f.saved, save_count * sizeof(size_t));
+                sp++;
+            }
+            break;
+        case OP_SAVE:
+            if (sp < stk_cap) {
+                stk[sp].pc = pc + 1;
+                stk[sp].start = f.start;
+                memcpy(stk[sp].saved, f.saved, save_count * sizeof(size_t));
+                if (ins->arg < save_count) stk[sp].saved[ins->arg] = pos;
+                sp++;
+            }
+            break;
+        case OP_BOL:
+        case OP_EOL:
+        case OP_WB:
+        case OP_NWB:
+            if (eval_assertion(ins, pos, len, prev_cp, next_cp, at_end)) {
+                if (sp < stk_cap) {
+                    stk[sp].pc = pc + 1;
+                    stk[sp].start = f.start;
+                    memcpy(stk[sp].saved, f.saved, save_count * sizeof(size_t));
+                    sp++;
+                }
+            }
+            break;
+        default:
+            list[*list_len].pc = pc;
+            list[*list_len].start = f.start;
+            memcpy(list[*list_len].saved, f.saved, save_count * sizeof(size_t));
+            (*list_len)++;
+            break;
+        }
+    }
+}
+
+bool tam_regex_find_captures(const tam_regex_t *re, const char *text, size_t len,
+                             size_t start_byte, tam_regex_captures_t *out)
+{
+    if (re == NULL || re->prog_len == 0) return false;
+    if (text == NULL) text = "";
+    if (start_byte > len) return false;
+
+    if (re->num_groups == 0) {
+        tam_regex_match_t m;
+        if (!vm_find_fast(re, text, len, start_byte, &m)) return false;
+        if (out != NULL) {
+            memset(out, 0, sizeof(*out));
+            out->groups[0] = m;
+            out->valid[0] = true;
+            out->group_count = 1;
+        }
+        return true;
+    }
+
+    size_t n = re->prog_len;
+    size_t save_count = re->num_groups * 2;
+    if (save_count > NUM_SAVE_SLOTS) save_count = NUM_SAVE_SLOTS;
+
+    vm_cap_thread_t *clist = malloc(n * sizeof(*clist));
+    vm_cap_thread_t *nlist = malloc(n * sizeof(*nlist));
+    uint32_t        *gen   = calloc(n, sizeof(*gen));
+    size_t           stk_cap = n * 2;
+    vm_cap_thread_t *stk   = malloc(stk_cap * sizeof(*stk));
+    if (!clist || !nlist || !gen || !stk) {
+        free(clist);
+        free(nlist);
+        free(gen);
+        free(stk);
+        return false;
+    }
+
+    size_t clist_len = 0, nlist_len = 0;
+    uint32_t cur_gen = 1;
+    bool has_best = false;
+    tam_regex_match_t best = {0, 0};
+    size_t best_saved[NUM_SAVE_SLOTS];
+    for (size_t s = 0; s < save_count; s++) best_saved[s] = (size_t)-1;
+
+    size_t pos = start_byte;
+    uint32_t prev_cp = utf8_prev(text, start_byte);
+
+    for (;;) {
+        bool at_end = (pos >= len);
+        uint32_t next_cp = 0;
+        size_t step_bytes = 0;
+        if (!at_end) step_bytes = utf8_next(text + pos, len - pos, &next_cp);
+
+        if (!has_best) {
+            add_thread_cap(re, clist, &clist_len, gen, cur_gen,
+                           0, pos, NULL, save_count,
+                           pos, len, prev_cp, next_cp, at_end, stk, stk_cap);
+        }
+
+        nlist_len = 0;
+        cur_gen++;
+        if (cur_gen == 0) {
+            memset(gen, 0, n * sizeof(*gen));
+            cur_gen = 1;
+        }
+
+        size_t next_pos = pos + step_bytes;
+        bool next_at_end = (next_pos >= len);
+        uint32_t after_cp = 0;
+        if (!next_at_end) utf8_next(text + next_pos, len - next_pos, &after_cp);
+
+        for (size_t i = 0; i < clist_len; i++) {
+            vm_cap_thread_t t = clist[i];
+            if (has_best && t.start > best.start) break;
+
+            const insn_t *ins = &re->prog[t.pc];
+            if (ins->op == OP_MATCH) {
+                best.start = t.start;
+                best.end   = pos;
+                memcpy(best_saved, t.saved, save_count * sizeof(size_t));
+                has_best   = true;
+                break;
+            }
+            if (at_end) continue;
+
+            bool matched = false;
+            switch (ins->op) {
+            case OP_CHAR:
+                matched = (ins->flags & TAM_REGEX_ICASE)
+                              ? (fold_ascii_latin(next_cp) == fold_ascii_latin(ins->arg))
+                              : (next_cp == ins->arg);
+                break;
+            case OP_ANY:
+                matched = (ins->flags & TAM_REGEX_DOTALL) || (next_cp != '\n');
+                break;
+            case OP_CLASS:
+                matched = cc_match(&re->classes[ins->arg], next_cp);
+                break;
+            default:
+                break;
+            }
+
+            if (matched) {
+                add_thread_cap(re, nlist, &nlist_len, gen, cur_gen,
+                               t.pc + 1, t.start, t.saved, save_count,
+                               next_pos, len, next_cp,
+                               after_cp, next_at_end, stk, stk_cap);
+            }
+        }
+
+        vm_cap_thread_t *tmp = clist;
+        clist = nlist;
+        nlist = tmp;
+        clist_len = nlist_len;
+
+        if (at_end || (has_best && clist_len == 0)) break;
+        prev_cp = next_cp;
+        pos = next_pos;
+    }
+
+    free(clist);
+    free(nlist);
+    free(gen);
+    free(stk);
 
     if (has_best && out != NULL) {
-        *out = best;
+        memset(out, 0, sizeof(*out));
+        out->groups[0] = best;
+        out->valid[0] = true;
+        out->group_count = 1 + re->num_groups;
+        if (out->group_count > TAM_REGEX_MAX_CAPTURES) {
+            out->group_count = TAM_REGEX_MAX_CAPTURES;
+        }
+        for (size_t g = 1; g < out->group_count; g++) {
+            size_t s = best_saved[(g - 1) * 2];
+            size_t e = best_saved[(g - 1) * 2 + 1];
+            if (s != (size_t)-1 && e != (size_t)-1 && e >= s) {
+                out->groups[g].start = s;
+                out->groups[g].end   = e;
+                out->valid[g]        = true;
+            }
+        }
     }
     return has_best;
+}
+
+bool tam_regex_find(const tam_regex_t *re, const char *text, size_t len,
+                    size_t start_byte, tam_regex_match_t *out)
+{
+    if (re == NULL || re->prog_len == 0) return false;
+    if (text == NULL) text = "";
+    if (start_byte > len) return false;
+    return vm_find_fast(re, text, len, start_byte, out);
 }
 
 bool tam_regex_match(const tam_regex_t *re, const char *text, size_t len)

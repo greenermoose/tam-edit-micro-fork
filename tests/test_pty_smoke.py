@@ -21,7 +21,7 @@ def drain_master(fd, stop_event):
 def test_cli_version():
     proc = subprocess.run(["./build/tam-edit", "--version"], stdout=subprocess.PIPE, text=True)
     assert proc.returncode == 0, f"--version failed with code {proc.returncode}"
-    assert "tam-edit 0.3.0" in proc.stdout, f"Unexpected version output: {proc.stdout}"
+    assert "tam-edit 0.4.0" in proc.stdout, f"Unexpected version output: {proc.stdout}"
     print("[PASS] CLI --version output verified")
 
 def test_cli_config_check():
@@ -225,9 +225,62 @@ def test_pty_splits_and_tabs():
 
     print("[PASS] PTY multi-tab file loading, split tree, and shared editing verified")
 
+def test_pty_milestone4_commands():
+    fpath = "/tmp/tam-m4-pty.txt"
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write("a=1 b=2\n")
+
+    cfg_dir = tempfile.mkdtemp(prefix="tam-m4-cfg-")
+    env = os.environ.copy()
+    env["TAM_EDIT_CONFIG_HOME"] = cfg_dir
+
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        ["./build/tam-edit", fpath],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+
+    stop_drain = threading.Event()
+    drain_thread = threading.Thread(target=drain_master, args=(master, stop_drain), daemon=True)
+    drain_thread.start()
+
+    time.sleep(0.4)
+    os.write(master, b"\x05")  # Ctrl-E
+    time.sleep(0.15)
+    os.write(master, b"replaceall ([a-z]+)=([0-9]+) $1:$2\r")
+    time.sleep(0.25)
+    os.write(master, b"\x13")  # Ctrl-S
+    time.sleep(0.25)
+    os.write(master, b"\x05")  # Ctrl-E
+    time.sleep(0.15)
+    os.write(master, b"help commands\r")
+    time.sleep(0.25)
+    os.write(master, b"\x11")  # Ctrl-Q
+    time.sleep(0.3)
+
+    proc.wait(timeout=2)
+    stop_drain.set()
+    drain_thread.join(timeout=1)
+    os.close(master)
+
+    with open(fpath, "r", encoding="utf-8") as f:
+        out = f.read()
+    assert out.strip() == "a:1 b:2", f"Unexpected replaceall output: {out!r}"
+
+    if os.path.exists(fpath):
+        os.remove(fpath)
+    shutil.rmtree(cfg_dir, ignore_errors=True)
+    print("[PASS] PTY Milestone 4 replaceall, help, save, and clean quit verified")
+
 if __name__ == "__main__":
     test_cli_version()
     test_cli_config_check()
     test_cli_micro_import()
     run_pty_test()
     test_pty_splits_and_tabs()
+    test_pty_milestone4_commands()

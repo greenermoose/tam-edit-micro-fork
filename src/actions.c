@@ -1,4 +1,5 @@
 #include "actions.h"
+#include "buffer.h"
 #include "clipboard.h"
 #include "cursor.h"
 #include "prompt.h"
@@ -58,6 +59,10 @@ static void act_delete(editor_t *ed)         { editor_delete(ed); }
 
 static void act_delete_word_left(editor_t *ed)
 {
+    if (ed->active_view && ed->active_view->buf && ed->active_view->buf->readonly) {
+        editor_set_message(ed, "Buffer is read-only");
+        return;
+    }
     if (ed->sel.active) {
         selection_delete(ed);
         return;
@@ -78,8 +83,43 @@ static void act_delete_word_left(editor_t *ed)
     }
 }
 
+static void copy_cursor_text(const editor_t *ed, tam_str_t *out)
+{
+    if (ed->sel.active) {
+        size_t len = 0;
+        char *text = selection_get_text(ed, &len);
+        if (text) {
+            *out = tam_str_cat_len(*out, text, len);
+            free(text);
+        }
+    } else if (ed->cx_line < ed->doc.count) {
+        *out = tam_str_cat_len(*out, ed->doc.lines[ed->cx_line],
+                               ed->doc.lens[ed->cx_line]);
+        *out = tam_str_cat(*out, ed->crlf ? "\r\n" : "\n");
+    }
+}
+
 static void act_copy(editor_t *ed)
 {
+    if (ed->extra_count > 0) {
+        tam_str_t joined = tam_str_new("");
+        if (!joined) return;
+        copy_cursor_text(ed, &joined);
+        editor_t tmp = *ed;
+        tmp.extra_count = 0;
+        for (size_t i = 0; i < ed->extra_count; i++) {
+            joined = tam_str_cat(joined, ed->crlf ? "\r\n" : "\n");
+            tmp.cx_line = ed->extra_cursors[i].cx_line;
+            tmp.cx_col = ed->extra_cursors[i].cx_col;
+            tmp.sel = ed->extra_cursors[i].sel;
+            copy_cursor_text(&tmp, &joined);
+        }
+        clipboard_set(joined, tam_str_len(joined), ed->tty_out_fd);
+        tam_str_free(joined);
+        editor_set_message(ed, "Copied multi-cursor selection");
+        return;
+    }
+
     if (ed->sel.active) {
         size_t len = 0;
         char *text = selection_get_text(ed, &len);
@@ -104,6 +144,18 @@ static void act_copy(editor_t *ed)
 
 static void act_cut(editor_t *ed)
 {
+    if (ed->active_view && ed->active_view->buf && ed->active_view->buf->readonly) {
+        editor_set_message(ed, "Buffer is read-only");
+        return;
+    }
+    if (ed->extra_count > 0) {
+        act_copy(ed);
+        if (ed->sel.active) {
+            editor_backspace(ed);
+            editor_set_message(ed, "Cut multi-cursor selection");
+        }
+        return;
+    }
     if (ed->sel.active) {
         act_copy(ed);
         selection_delete(ed);
@@ -111,16 +163,7 @@ static void act_cut(editor_t *ed)
     } else {
         if (ed->cx_line < ed->doc.count) {
             act_copy(ed);
-            size_t runes = edit_line_runes(ed->doc.lines[ed->cx_line],
-                                           ed->doc.lens[ed->cx_line]);
-            undo_record_remove(ed, ed->cx_line, 0, ed->doc.lines[ed->cx_line],
-                               ed->doc.lens[ed->cx_line]);
-            undo_record_remove(ed, ed->cx_line, runes, "\n", 1);
-            undo_clear_redo(ed);
-            editor_raw_remove(ed, ed->cx_line, 0, runes);
-            editor_raw_remove(ed, ed->cx_line, 0, 1);
-            cursor_clamp(ed);
-            ed->dirty = true;
+            editor_delete_line(ed);
             editor_set_message(ed, "Cut line");
         }
     }
@@ -134,28 +177,15 @@ static void act_paste(editor_t *ed)
         editor_insert_text(ed, text, len);
         free(text);
         editor_set_message(ed, "Pasted");
+    } else {
+        free(text);
     }
 }
 
-static void act_duplicate_line(editor_t *ed)
-{
-    if (ed->cx_line < ed->doc.count) {
-        const char *cur = ed->doc.lines[ed->cx_line];
-        size_t len = ed->doc.lens[ed->cx_line];
-        tam_str_t s = tam_str_new("\n");
-        s = tam_str_cat_len(s, cur, len);
-        if (s != NULL) {
-            size_t runes = edit_line_runes(cur, len);
-            undo_record_insert(ed, ed->cx_line, runes, s, tam_str_len(s));
-            undo_clear_redo(ed);
-            editor_raw_insert(ed, ed->cx_line, runes, s, tam_str_len(s));
-            ed->cx_line++;
-            cursor_clamp(ed);
-            ed->dirty = true;
-            tam_str_free(s);
-        }
-    }
-}
+static void act_duplicate_line(editor_t *ed) { editor_duplicate(ed); }
+static void act_delete_line(editor_t *ed)    { editor_delete_line(ed); }
+static void act_move_lines_up(editor_t *ed)  { editor_move_lines(ed, -1); }
+static void act_move_lines_down(editor_t *ed){ editor_move_lines(ed, 1); }
 
 static void act_undo(editor_t *ed) { editor_undo(ed); }
 static void act_redo(editor_t *ed) { editor_redo(ed); }
@@ -165,8 +195,19 @@ static void act_save(editor_t *ed)
     if (ed->path == NULL || ed->path[0] == '\0') {
         prompt_open_save_as(ed);
     } else {
-        editor_save(ed);
+        char err[192] = "";
+        editor_save_configured(ed, err, sizeof(err));
     }
+}
+
+static void act_save_as(editor_t *ed)
+{
+    prompt_open_save_as(ed);
+}
+
+static void act_open_file(editor_t *ed)
+{
+    prompt_open_command_prefill(ed, "open ");
 }
 
 static void act_quit(editor_t *ed)
@@ -182,11 +223,49 @@ static void act_quit(editor_t *ed)
     ed->running = false;
 }
 
+static void act_quit_all(editor_t *ed)
+{
+    bool any_dirty = false;
+    for (size_t i = 0; i < ed->tabs.count; i++) {
+        if (tab_is_dirty(ed->tabs.tabs[i])) any_dirty = true;
+    }
+    if (any_dirty || ed->dirty) {
+        prompt_open_quit_confirm(ed);
+        return;
+    }
+    ed->running = false;
+}
+
 static void act_command_mode(editor_t *ed) { prompt_open_command(ed); }
 static void act_goto(editor_t *ed)         { prompt_open_goto(ed); }
 static void act_find(editor_t *ed)         { prompt_open_find(ed); }
+static void act_find_literal(editor_t *ed) { prompt_open_find_literal(ed); }
 static void act_find_next(editor_t *ed)    { search_find_next(ed); }
 static void act_find_prev(editor_t *ed)    { search_find_prev(ed); }
+static void act_run_shell(editor_t *ed)    { prompt_open_shell(ed); }
+static void act_shell_mode(editor_t *ed)
+{
+    if (!ed->tty) {
+        prompt_open_shell(ed);
+        return;
+    }
+    int rc = shell_run_interactive(ed->tty, NULL, false, true);
+    editor_set_message(ed, "Shell exited (%d)", rc);
+}
+static void act_toggle_help(editor_t *ed)  { prompt_execute_command(ed, "help"); }
+static void act_toggle_overwrite(editor_t *ed)
+{
+    ed->config.overwrite = !ed->config.overwrite;
+    editor_set_message(ed, "Overwrite mode %s", ed->config.overwrite ? "on" : "off");
+}
+
+static void act_spawn_cursor(editor_t *ed)        { editor_spawn_cursor_match(ed, false); }
+static void act_skip_cursor(editor_t *ed)         { editor_spawn_cursor_match(ed, true); }
+static void act_spawn_cursor_up(editor_t *ed)     { editor_spawn_cursor_dir(ed, -1); }
+static void act_spawn_cursor_down(editor_t *ed)   { editor_spawn_cursor_dir(ed, 1); }
+static void act_spawn_cursor_select(editor_t *ed) { editor_spawn_cursors_on_selection(ed); }
+static void act_remove_cursor(editor_t *ed)       { editor_remove_last_cursor(ed); }
+static void act_remove_all_cursors(editor_t *ed)  { editor_remove_all_cursors(ed); }
 
 /* Milestone 2 Action implementations */
 static void act_vsplit(editor_t *ed)          { editor_vsplit(ed, NULL); }
@@ -270,17 +349,37 @@ static const action_def_t g_actions[] = {
     {"Cut", act_cut},
     {"CutLine", act_cut},
     {"Paste", act_paste},
+    {"DeleteLine", act_delete_line},
+    {"MoveLinesUp", act_move_lines_up},
+    {"MoveLinesDown", act_move_lines_down},
     {"Duplicate", act_duplicate_line},
     {"DuplicateLine", act_duplicate_line},
     {"Undo", act_undo},
     {"Redo", act_redo},
     {"Save", act_save},
+    {"SaveAs", act_save_as},
+    {"OpenFile", act_open_file},
     {"Quit", act_quit},
+    {"QuitAll", act_quit_all},
     {"CommandMode", act_command_mode},
     {"Goto", act_goto},
     {"Find", act_find},
+    {"FindLiteral", act_find_literal},
     {"FindNext", act_find_next},
     {"FindPrevious", act_find_prev},
+    {"ShellMode", act_shell_mode},
+    {"RunShell", act_run_shell},
+    {"ToggleHelp", act_toggle_help},
+    {"ToggleOverwriteMode", act_toggle_overwrite},
+
+    /* Multi-cursor Actions */
+    {"SpawnMultiCursor", act_spawn_cursor},
+    {"SkipMultiCursor", act_skip_cursor},
+    {"SpawnMultiCursorUp", act_spawn_cursor_up},
+    {"SpawnMultiCursorDown", act_spawn_cursor_down},
+    {"SpawnMultiCursorSelect", act_spawn_cursor_select},
+    {"RemoveMultiCursor", act_remove_cursor},
+    {"RemoveAllMultiCursors", act_remove_all_cursors},
 
     /* Milestone 2 Actions */
     {"VSplit", act_vsplit},
@@ -307,13 +406,24 @@ bool actions_execute(editor_t *ed, const char *name)
 {
     if (name == NULL || *name == '\0') return false;
 
-    /* Handle command: prefix (from micro bindings) */
-    if (strncmp(name, "command:", 8) == 0) {
-        name += 8;
+    if (strncmp(name, "command-edit:", 13) == 0) {
+        prompt_open_command_prefill(ed, name + 13);
+        return true;
     }
 
-    if (strncmp(name, "togglelocal softwrap", 20) == 0 ||
-        strncmp(name, "toggle softwrap", 15) == 0) {
+    if (strncmp(name, "command:", 8) == 0) {
+        const char *cmd = name + 8;
+        if (strcmp(cmd, "togglelocal softwrap") == 0 ||
+            strcmp(cmd, "toggle softwrap") == 0) {
+            act_toggle_softwrap(ed);
+            return true;
+        }
+        prompt_execute_command(ed, cmd);
+        return true;
+    }
+
+    if (strcmp(name, "togglelocal softwrap") == 0 ||
+        strcmp(name, "toggle softwrap") == 0) {
         act_toggle_softwrap(ed);
         return true;
     }
@@ -322,12 +432,18 @@ bool actions_execute(editor_t *ed, const char *name)
     const char *pipe = strchr(name, '|');
     if (pipe != NULL) {
         char first[64];
-        size_t n = pipe - name;
+        size_t n = (size_t)(pipe - name);
         if (n >= sizeof(first)) n = sizeof(first) - 1;
         memcpy(first, name, n);
         first[n] = '\0';
         if (actions_execute(ed, first)) return true;
         return actions_execute(ed, pipe + 1);
+    }
+
+    if (strcmp(name, "RemoveAllMultiCursors") == 0) {
+        if (ed->extra_count == 0) return false;
+        editor_remove_all_cursors(ed);
+        return true;
     }
 
     for (size_t i = 0; g_actions[i].name != NULL; i++) {
@@ -388,11 +504,13 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_TAB, 0, 0, "InsertTab"},
     {TAM_KEY_BACKSPACE, 0, 0, "Backspace"},
     {TAM_KEY_DELETE, 0, 0, "Delete"},
+    {TAM_KEY_INSERT, 0, 0, "ToggleOverwriteMode"},
     {TAM_KEY_BACKSPACE, 0, TAM_MOD_CTRL, "DeleteWordLeft"},
     {TAM_KEY_BACKSPACE, 0, TAM_MOD_ALT, "DeleteWordLeft"},
 
     /* Common Micro Ctrl keys */
     {TAM_KEY_CHAR, 's', TAM_MOD_CTRL, "Save"},
+    {TAM_KEY_CHAR, 'o', TAM_MOD_CTRL, "OpenFile"},
     {TAM_KEY_CHAR, 'q', TAM_MOD_CTRL, "Quit"},
     {TAM_KEY_CHAR, 'z', TAM_MOD_CTRL, "Undo"},
     {TAM_KEY_CHAR, 'y', TAM_MOD_CTRL, "Redo"},
@@ -407,16 +525,28 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_CHAR, 'n', TAM_MOD_CTRL, "FindNext"},
     {TAM_KEY_CHAR, 'p', TAM_MOD_CTRL, "FindPrevious"},
     {TAM_KEY_CHAR, 'k', TAM_MOD_CTRL, "CutLine"},
+    {TAM_KEY_CHAR, 'b', TAM_MOD_CTRL, "ShellMode"},
     {TAM_KEY_CHAR, 'w', TAM_MOD_CTRL, "NextSplit|FirstSplit"},
     {TAM_KEY_CHAR, 't', TAM_MOD_CTRL, "AddTab"},
     {TAM_KEY_CHAR, 'r', TAM_MOD_CTRL, "ToggleRuler"},
 
     /* Alt shortcuts */
+    {TAM_KEY_CHAR, 'f', TAM_MOD_ALT, "FindLiteral"},
     {TAM_KEY_CHAR, 'w', TAM_MOD_ALT, "ToggleSoftwrap"},
     {TAM_KEY_CHAR, '.', TAM_MOD_ALT, "NextTab|FirstTab"},
     {TAM_KEY_CHAR, ',', TAM_MOD_ALT, "PreviousTab|LastTab"},
+    {TAM_KEY_CHAR, 'n', TAM_MOD_ALT, "SpawnMultiCursor"},
+    {TAM_KEY_CHAR, 'm', TAM_MOD_ALT, "SpawnMultiCursorSelect"},
+    {TAM_KEY_CHAR, 'x', TAM_MOD_ALT, "SkipMultiCursor"},
+    {TAM_KEY_CHAR, 'p', TAM_MOD_ALT, "RemoveMultiCursor"},
+    {TAM_KEY_CHAR, 'c', TAM_MOD_ALT, "RemoveAllMultiCursors"},
+    {TAM_KEY_UP, 0, TAM_MOD_ALT | TAM_MOD_SHIFT, "SpawnMultiCursorUp"},
+    {TAM_KEY_DOWN, 0, TAM_MOD_ALT | TAM_MOD_SHIFT, "SpawnMultiCursorDown"},
+    {TAM_KEY_UP, 0, TAM_MOD_ALT, "MoveLinesUp"},
+    {TAM_KEY_DOWN, 0, TAM_MOD_ALT, "MoveLinesDown"},
 
     /* Function keys */
+    {TAM_KEY_F1, 0, 0, "ToggleHelp"},
     {TAM_KEY_F2, 0, 0, "Save"},
     {TAM_KEY_F3, 0, 0, "FindNext"},
     {TAM_KEY_F4, 0, 0, "Quit"},
@@ -424,10 +554,39 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_F10, 0, 0, "Quit"},
 
     /* Esc */
-    {TAM_KEY_ESC, 0, 0, "Deselect"},
+    {TAM_KEY_ESC, 0, 0, "RemoveAllMultiCursors|Deselect"},
 
     {TAM_KEY_NONE, 0, 0, NULL}
 };
+
+const char *actions_lookup_key_description(const editor_t *ed, const tam_key_event_t *ev)
+{
+    if (!ed || !ev) return NULL;
+    for (custom_keybind_t *ckb = ed->keybindings; ckb != NULL; ckb = ckb->next) {
+        if (ckb->type == ev->type && ckb->mods == ev->mods) {
+            if (ckb->type == TAM_KEY_CHAR && ckb->codepoint != 0) {
+                if (tolower((unsigned char)ckb->codepoint) !=
+                    tolower((unsigned char)ev->codepoint)) {
+                    continue;
+                }
+            }
+            return ckb->action;
+        }
+    }
+    for (size_t i = 0; g_keybindings[i].action != NULL; i++) {
+        const keybind_entry_t *kb = &g_keybindings[i];
+        if (kb->type == ev->type && kb->mods == ev->mods) {
+            if (kb->type == TAM_KEY_CHAR && kb->codepoint != 0) {
+                if (tolower((unsigned char)kb->codepoint) !=
+                    tolower((unsigned char)ev->codepoint)) {
+                    continue;
+                }
+            }
+            return kb->action;
+        }
+    }
+    return NULL;
+}
 
 bool actions_handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)
 {

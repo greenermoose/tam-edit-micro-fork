@@ -1,4 +1,5 @@
 #include "config.h"
+#include "encoding.h"
 
 #include <tam.h>
 
@@ -32,6 +33,17 @@ void config_init_defaults(config_t *cfg)
     strncpy(cfg->clipboard, "terminal", sizeof(cfg->clipboard) - 1);
     cfg->syntax       = true;
     cfg->detectlimit  = 100;
+    strncpy(cfg->encoding, "utf-8", sizeof(cfg->encoding) - 1);
+    cfg->ignorecase   = true;
+    cfg->incsearch    = true;
+    cfg->hlsearch     = false;
+    cfg->mkparents    = false;
+    cfg->scrollmargin = 3;
+    cfg->tabmovement  = false;
+    cfg->smartpaste   = true;
+    cfg->overwrite    = false;
+    strncpy(cfg->reload, "prompt", sizeof(cfg->reload) - 1);
+    strncpy(cfg->helpsplit, "hsplit", sizeof(cfg->helpsplit) - 1);
 }
 
 void keybinds_free(custom_keybind_t *kb)
@@ -163,6 +175,62 @@ bool config_set(config_t *cfg, const char *name, const char *value)
         }
         return false;
     }
+    if (strcmp(name, "encoding") == 0) {
+        if (!encoding_is_valid(value)) return false;
+        encoding_canonical_name(value, cfg->encoding, sizeof(cfg->encoding));
+        return true;
+    }
+    if (strcmp(name, "ignorecase") == 0) {
+        return parse_bool(value, &cfg->ignorecase);
+    }
+    if (strcmp(name, "incsearch") == 0) {
+        return parse_bool(value, &cfg->incsearch);
+    }
+    if (strcmp(name, "hlsearch") == 0) {
+        return parse_bool(value, &cfg->hlsearch);
+    }
+    if (strcmp(name, "mkparents") == 0) {
+        return parse_bool(value, &cfg->mkparents);
+    }
+    if (strcmp(name, "scrollmargin") == 0) {
+        char *end = NULL;
+        long v = strtol(value, &end, 10);
+        if (end != value && *end == '\0' && v >= 0 && v <= 50) {
+            cfg->scrollmargin = (int)v;
+            return true;
+        }
+        return false;
+    }
+    if (strcmp(name, "tabmovement") == 0) {
+        return parse_bool(value, &cfg->tabmovement);
+    }
+    if (strcmp(name, "smartpaste") == 0) {
+        return parse_bool(value, &cfg->smartpaste);
+    }
+    if (strcmp(name, "overwrite") == 0) {
+        return parse_bool(value, &cfg->overwrite);
+    }
+    if (strcmp(name, "reload") == 0) {
+        if (strcasecmp(value, "prompt") == 0 ||
+            strcasecmp(value, "auto") == 0 ||
+            strcasecmp(value, "disabled") == 0) {
+            for (size_t i = 0; i < sizeof(cfg->reload) - 1 && value[i]; i++) {
+                cfg->reload[i] = (char)tolower((unsigned char)value[i]);
+                cfg->reload[i + 1] = '\0';
+            }
+            return true;
+        }
+        return false;
+    }
+    if (strcmp(name, "helpsplit") == 0) {
+        if (strcasecmp(value, "hsplit") == 0 ||
+            strcasecmp(value, "vsplit") == 0) {
+            snprintf(cfg->helpsplit, sizeof(cfg->helpsplit), "%s",
+                     strcasecmp(value, "vsplit") == 0 ? "vsplit" : "hsplit");
+            return true;
+        }
+        return false;
+    }
 
     return false;
 }
@@ -249,7 +317,73 @@ bool config_get(const config_t *cfg, const char *name, char *buf, size_t buflen)
         snprintf(buf, buflen, "%d", cfg->detectlimit);
         return true;
     }
+    if (strcmp(name, "encoding") == 0) {
+        snprintf(buf, buflen, "%s", cfg->encoding);
+        return true;
+    }
+    if (strcmp(name, "ignorecase") == 0) {
+        snprintf(buf, buflen, "%s", cfg->ignorecase ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "incsearch") == 0) {
+        snprintf(buf, buflen, "%s", cfg->incsearch ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "hlsearch") == 0) {
+        snprintf(buf, buflen, "%s", cfg->hlsearch ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "mkparents") == 0) {
+        snprintf(buf, buflen, "%s", cfg->mkparents ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "scrollmargin") == 0) {
+        snprintf(buf, buflen, "%d", cfg->scrollmargin);
+        return true;
+    }
+    if (strcmp(name, "tabmovement") == 0) {
+        snprintf(buf, buflen, "%s", cfg->tabmovement ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "smartpaste") == 0) {
+        snprintf(buf, buflen, "%s", cfg->smartpaste ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "overwrite") == 0) {
+        snprintf(buf, buflen, "%s", cfg->overwrite ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "reload") == 0) {
+        snprintf(buf, buflen, "%s", cfg->reload);
+        return true;
+    }
+    if (strcmp(name, "helpsplit") == 0) {
+        snprintf(buf, buflen, "%s", cfg->helpsplit);
+        return true;
+    }
     return false;
+}
+
+bool config_get_default(const char *name, char *buf, size_t buflen)
+{
+    config_t def;
+    config_init_defaults(&def);
+    return config_get(&def, name, buf, buflen);
+}
+
+static const char *const k_option_names[] = {
+    "autoindent", "clipboard", "colorscheme", "cursorline", "detectlimit",
+    "encoding", "eofnewline", "helpsplit", "hlsearch", "ignorecase",
+    "incsearch", "mkparents", "overwrite", "reload", "rmtrailingws",
+    "ruler", "scrollmargin", "scrollsync", "smartpaste", "softwrap",
+    "splitbottom", "splitright", "statusline", "syntax", "tabbar",
+    "tabmovement", "tabsize", "tabstospaces", "truecolor", "wordwrap"
+};
+
+const char *const *config_option_names(size_t *out_count)
+{
+    if (out_count) *out_count = sizeof(k_option_names) / sizeof(k_option_names[0]);
+    return k_option_names;
 }
 
 static char *trim_inplace(char *s)
@@ -322,12 +456,20 @@ bool keybind_parse_string(const char *str, tam_key_type_t *type_out,
         type = TAM_KEY_ENTER;
     } else if (strcasecmp(p, "tab") == 0) {
         type = TAM_KEY_TAB;
+    } else if (strcasecmp(p, "backtab") == 0) {
+        type = TAM_KEY_TAB;
+        mods |= TAM_MOD_SHIFT;
     } else if (strcasecmp(p, "backspace") == 0) {
         type = TAM_KEY_BACKSPACE;
+    } else if (strcasecmp(p, "insert") == 0 || strcasecmp(p, "ins") == 0) {
+        type = TAM_KEY_INSERT;
     } else if (strcasecmp(p, "delete") == 0 || strcasecmp(p, "del") == 0) {
         type = TAM_KEY_DELETE;
     } else if (strcasecmp(p, "escape") == 0 || strcasecmp(p, "esc") == 0) {
         type = TAM_KEY_ESC;
+    } else if (strcasecmp(p, "space") == 0) {
+        type = TAM_KEY_CHAR;
+        cp = ' ';
     } else if (p[0] == 'f' || p[0] == 'F') {
         int fnum = atoi(p + 1);
         if (fnum >= 1 && fnum <= 12) {
@@ -347,6 +489,55 @@ bool keybind_parse_string(const char *str, tam_key_type_t *type_out,
     *cp_out   = cp;
     *mods_out = mods;
     return true;
+}
+
+void keybind_format_string(tam_key_type_t type, uint32_t cp, unsigned mods,
+                           char *buf, size_t buflen)
+{
+    if (!buf || buflen == 0) return;
+    char prefix[64] = "";
+    if (mods & TAM_MOD_CTRL)  strncat(prefix, "Ctrl-",  sizeof(prefix) - strlen(prefix) - 1);
+    if (mods & TAM_MOD_ALT)   strncat(prefix, "Alt-",   sizeof(prefix) - strlen(prefix) - 1);
+    if (mods & TAM_MOD_SHIFT) strncat(prefix, "Shift-", sizeof(prefix) - strlen(prefix) - 1);
+
+    const char *kname = NULL;
+    char ch_name[16] = "";
+    switch (type) {
+    case TAM_KEY_UP:        kname = "Up"; break;
+    case TAM_KEY_DOWN:      kname = "Down"; break;
+    case TAM_KEY_LEFT:      kname = "Left"; break;
+    case TAM_KEY_RIGHT:     kname = "Right"; break;
+    case TAM_KEY_HOME:      kname = "Home"; break;
+    case TAM_KEY_END:       kname = "End"; break;
+    case TAM_KEY_PAGE_UP:   kname = "PageUp"; break;
+    case TAM_KEY_PAGE_DOWN: kname = "PageDown"; break;
+    case TAM_KEY_ENTER:     kname = "Enter"; break;
+    case TAM_KEY_TAB:       kname = "Tab"; break;
+    case TAM_KEY_BACKSPACE: kname = "Backspace"; break;
+    case TAM_KEY_INSERT:    kname = "Insert"; break;
+    case TAM_KEY_DELETE:    kname = "Delete"; break;
+    case TAM_KEY_ESC:       kname = "Esc"; break;
+    case TAM_KEY_CHAR:
+        if (cp == ' ') {
+            kname = "Space";
+        } else if (cp >= 33 && cp < 127) {
+            snprintf(ch_name, sizeof(ch_name), "%c", (char)cp);
+            kname = ch_name;
+        } else {
+            snprintf(ch_name, sizeof(ch_name), "U+%X", cp);
+            kname = ch_name;
+        }
+        break;
+    default:
+        if (type >= TAM_KEY_F1 && type <= TAM_KEY_F12) {
+            snprintf(ch_name, sizeof(ch_name), "F%d", (int)(type - TAM_KEY_F1 + 1));
+            kname = ch_name;
+        } else {
+            kname = "Unknown";
+        }
+        break;
+    }
+    snprintf(buf, buflen, "%s%s", prefix, kname);
 }
 
 typedef struct {
@@ -430,8 +621,15 @@ static int ini_entry_handler(void *user, const char *section,
 
 static char *get_config_dir(bool create)
 {
-    const char *xdg = getenv("XDG_CONFIG_HOME");
+    const char *override = getenv("TAM_EDIT_CONFIG_HOME");
     char base[512];
+    if (override != NULL && *override != '\0') {
+        snprintf(base, sizeof(base), "%s", override);
+        if (create) tam_fs_mkdir_p(base, 0755);
+        return strdup(base);
+    }
+
+    const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg != NULL && *xdg != '\0') {
         snprintf(base, sizeof(base), "%s/tam-edit", xdg);
     } else {
@@ -728,4 +926,122 @@ bool config_import_micro(const char *micro_dir, const char *out_ini_path, FILE *
 
     tam_str_free(ini_out);
     return ok;
+}
+
+static bool ini_update_entry(const char *section, const char *key, const char *value)
+{
+    char *cfg_dir = get_config_dir(true);
+    if (!cfg_dir) return false;
+
+    char ini_path[512];
+    snprintf(ini_path, sizeof(ini_path), "%s/settings.ini", cfg_dir);
+    free(cfg_dir);
+
+    size_t len = 0;
+    char *existing = tam_fs_read_file(ini_path, &len);
+    tam_str_t out = tam_str_new("");
+    if (!out) {
+        free(existing);
+        return false;
+    }
+
+    bool in_target_sec = false;
+    bool seen_target_sec = false;
+    bool wrote_entry = false;
+
+    if (existing) {
+        char *p = existing;
+        while (*p) {
+            char *nl = strchr(p, '\n');
+            size_t line_len = nl ? (size_t)(nl - p) : strlen(p);
+            char *line = malloc(line_len + 1);
+            if (!line) break;
+            memcpy(line, p, line_len);
+            line[line_len] = '\0';
+            if (line_len > 0 && line[line_len - 1] == '\r') {
+                line[--line_len] = '\0';
+            }
+
+            char copy[512];
+            snprintf(copy, sizeof(copy), "%s", line);
+            char *t = trim_inplace(copy);
+
+            if (t[0] == '[') {
+                if (in_target_sec && !wrote_entry && value != NULL) {
+                    out = tam_str_cat_printf(out, "%s = %s\n", key, value);
+                    wrote_entry = true;
+                }
+                char *rb = strchr(t, ']');
+                if (rb) *rb = '\0';
+                char *sec_name = trim_inplace(t + 1);
+                in_target_sec = (strcasecmp(sec_name, section) == 0);
+                if (in_target_sec) seen_target_sec = true;
+                out = tam_str_cat_printf(out, "%s\n", line);
+            } else if (in_target_sec && t[0] != '#' && t[0] != ';' && t[0] != '\0') {
+                char *eq = strchr(t, '=');
+                if (eq) {
+                    *eq = '\0';
+                    char *k = trim_inplace(t);
+                    bool match = (strcasecmp(section, "bindings") == 0)
+                                 ? (strcasecmp(k, key) == 0)
+                                 : (strcmp(k, key) == 0);
+                    if (match) {
+                        if (value != NULL) {
+                            if (!wrote_entry) {
+                                out = tam_str_cat_printf(out, "%s = %s\n", key, value);
+                                wrote_entry = true;
+                            }
+                        } else {
+                            wrote_entry = true; /* omitted */
+                        }
+                        free(line);
+                        p = nl ? (nl + 1) : (p + line_len);
+                        continue;
+                    }
+                }
+                out = tam_str_cat_printf(out, "%s\n", line);
+            } else {
+                out = tam_str_cat_printf(out, "%s\n", line);
+            }
+
+            free(line);
+            p = nl ? (nl + 1) : (p + line_len);
+        }
+        free(existing);
+    }
+
+    if (value != NULL && !wrote_entry) {
+        if (!seen_target_sec) {
+            if (tam_str_len(out) > 0 && out[tam_str_len(out) - 1] != '\n') {
+                out = tam_str_cat(out, "\n");
+            }
+            if (tam_str_len(out) > 0) {
+                out = tam_str_cat(out, "\n");
+            }
+            out = tam_str_cat_printf(out, "[%s]\n", section);
+        }
+        out = tam_str_cat_printf(out, "%s = %s\n", key, value);
+    }
+
+    bool ok = tam_fs_write_atomic(ini_path, out, tam_str_len(out), 0644);
+    tam_str_free(out);
+    return ok;
+}
+
+bool config_save_setting(const char *name, const char *value)
+{
+    if (!name || !name[0] || !value) return false;
+    return ini_update_entry("settings", name, value);
+}
+
+bool config_save_binding(const char *key_str, const char *action_str)
+{
+    if (!key_str || !key_str[0] || !action_str) return false;
+    return ini_update_entry("bindings", key_str, action_str);
+}
+
+bool config_remove_binding(const char *key_str)
+{
+    if (!key_str || !key_str[0]) return false;
+    return ini_update_entry("bindings", key_str, NULL);
 }
