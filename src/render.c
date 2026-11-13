@@ -3,6 +3,7 @@
 #include "cursor.h"
 #include "colorscheme.h"
 #include "pane.h"
+#include "syntax.h"
 
 #include <tam.h>
 #include <tam_uni.h>
@@ -150,6 +151,26 @@ static void render_paint_tabbar(editor_t *ed, grid_t *g)
 /* Painting Split View Text and Gutter                                        */
 /* -------------------------------------------------------------------------- */
 
+static inline void apply_cell_syntax(const colorscheme_t *cs,
+                                     const style_t *def_style,
+                                     const uint16_t *syn_groups,
+                                     size_t syn_runes,
+                                     size_t rune_col,
+                                     uint32_t *cell_fg,
+                                     uint32_t *cell_bg,
+                                     uint16_t *attr)
+{
+    if (!syn_groups || rune_col >= syn_runes) return;
+    uint16_t gid = syn_groups[rune_col];
+    if (gid == 0 || gid >= SYNTAX_MAX_GROUPS) return;
+    style_t st = cs->group_cache[gid];
+    *cell_fg = st.fg;
+    *attr = st.attr;
+    if (st.bg != COLOR_DEFAULT && st.bg != def_style->bg) {
+        *cell_bg = st.bg;
+    }
+}
+
 static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                               style_t def_style, style_t num_style,
                               style_t cur_num_style, style_t curline_style)
@@ -198,6 +219,11 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
         v->left_col = 0;
     }
 
+    /* Advance incremental syntax states up through the visible viewport */
+    if (b->syntax_enabled && b->syntax_def != NULL && text_rows > 0) {
+        buffer_syntax_update_to(b, v->top_line + (size_t)text_rows);
+    }
+
     /* Paint text rows */
     int screen_r = 0;
     size_t line_idx = v->top_line;
@@ -208,6 +234,8 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
             const char *line = b->doc.lines[line_idx];
             size_t len = b->doc.lens[line_idx];
             bool is_cur_line = (v == ed->active_view && line_idx == v->cx_line);
+            size_t syn_runes = 0;
+            const uint16_t *syn_groups = buffer_syntax_get_line_groups(b, line_idx, &syn_runes);
 
             /* Paint gutter line number */
             if (gw > 0) {
@@ -240,6 +268,10 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                     uint16_t attr = def_style.attr;
                     uint32_t cell_fg = def_style.fg;
                     uint32_t cell_bg = row_bg;
+
+                    apply_cell_syntax(&ed->colorscheme, &def_style,
+                                      syn_groups, syn_runes, rune_col,
+                                      &cell_fg, &cell_bg, &attr);
 
                     if (in_view_selection(v, line_idx, rune_col)) {
                         attr |= ATTR_REVERSE;
@@ -301,6 +333,10 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
                         uint32_t cell_fg = def_style.fg;
                         uint32_t cell_bg = row_bg;
 
+                        apply_cell_syntax(&ed->colorscheme, &def_style,
+                                          syn_groups, syn_runes, rune_col,
+                                          &cell_fg, &cell_bg, &attr);
+
                         if (in_view_selection(v, line_idx, rune_col)) {
                             attr |= ATTR_REVERSE;
                         }
@@ -360,8 +396,13 @@ static void render_paint_view(editor_t *ed, view_t *v, grid_t *g,
     char left_txt[128];
     snprintf(left_txt, sizeof(left_txt), " %s%s", base, b->dirty ? " [+]" : "");
 
-    char right_txt[64];
-    snprintf(right_txt, sizeof(right_txt), "%zu:%zu ", v->cx_line + 1, v->cx_col + 1);
+    char right_txt[96];
+    if (b->filetype[0] != '\0' && strcmp(b->filetype, "unknown") != 0) {
+        snprintf(right_txt, sizeof(right_txt), "%s | %zu:%zu ",
+                 b->filetype, v->cx_line + 1, v->cx_col + 1);
+    } else {
+        snprintf(right_txt, sizeof(right_txt), "%zu:%zu ", v->cx_line + 1, v->cx_col + 1);
+    }
 
     int l_len = (int)strlen(left_txt);
     int r_len = (int)strlen(right_txt);
@@ -447,6 +488,11 @@ void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
     if (cols < 2) cols = 2;
 
     renderer_resize(ren, rows, cols);
+
+    if (!ed->colorscheme.cache_valid) {
+        syntax_build_style_cache(&ed->colorscheme, ed->colorscheme.group_cache);
+        ed->colorscheme.cache_valid = true;
+    }
 
     style_t def_style     = colorscheme_get(&ed->colorscheme, "default");
     style_t num_style     = colorscheme_get(&ed->colorscheme, "line-number");

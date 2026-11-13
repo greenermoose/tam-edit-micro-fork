@@ -30,6 +30,8 @@ void config_init_defaults(config_t *cfg)
     cfg->rmtrailingws = false;
     cfg->truecolor    = TRUECOLOR_AUTO;
     strncpy(cfg->clipboard, "terminal", sizeof(cfg->clipboard) - 1);
+    cfg->syntax       = true;
+    cfg->detectlimit  = 100;
 }
 
 void keybinds_free(custom_keybind_t *kb)
@@ -149,6 +151,18 @@ bool config_set(config_t *cfg, const char *name, const char *value)
         }
         return false;
     }
+    if (strcmp(name, "syntax") == 0) {
+        return parse_bool(value, &cfg->syntax);
+    }
+    if (strcmp(name, "detectlimit") == 0) {
+        char *end = NULL;
+        long v = strtol(value, &end, 10);
+        if (end != value && *end == '\0' && v >= 0 && v <= 100000) {
+            cfg->detectlimit = (int)v;
+            return true;
+        }
+        return false;
+    }
 
     return false;
 }
@@ -225,6 +239,14 @@ bool config_get(const config_t *cfg, const char *name, char *buf, size_t buflen)
     }
     if (strcmp(name, "clipboard") == 0) {
         snprintf(buf, buflen, "%s", cfg->clipboard);
+        return true;
+    }
+    if (strcmp(name, "syntax") == 0) {
+        snprintf(buf, buflen, "%s", cfg->syntax ? "true" : "false");
+        return true;
+    }
+    if (strcmp(name, "detectlimit") == 0) {
+        snprintf(buf, buflen, "%d", cfg->detectlimit);
         return true;
     }
     return false;

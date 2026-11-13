@@ -21,7 +21,7 @@ def drain_master(fd, stop_event):
 def test_cli_version():
     proc = subprocess.run(["./build/tam-edit", "--version"], stdout=subprocess.PIPE, text=True)
     assert proc.returncode == 0, f"--version failed with code {proc.returncode}"
-    assert "tam-edit 0.2.0" in proc.stdout, f"Unexpected version output: {proc.stdout}"
+    assert "tam-edit 0.3.0" in proc.stdout, f"Unexpected version output: {proc.stdout}"
     print("[PASS] CLI --version output verified")
 
 def test_cli_config_check():

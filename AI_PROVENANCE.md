@@ -13,3 +13,4 @@ boundary and verification. Transcripts are retained privately by the author.
 | Pruning, README, version 0.0.1 and milestone mapping | OpenCode 2.2.5 (`big-pickle`); Codex 0.167.2 (`gpt-6.1-sol`) | [2026-11-12](docs/ai/2026-11-12-cleanup-and-versioning.md) |
 | Milestone 1 (version 0.1.0 daily-usable editor) | Antigravity CLI (Gemini 3.8 Flash) | [2026-11-12](docs/ai/2026-11-12-milestone-1.md) |
 | Milestone 2 (version 0.2.0 views and configuration) | Antigravity CLI (Gemini 3.8 Flash) | [2026-11-12](docs/ai/2026-11-12-milestone-2.md) |
+| Milestone 3 (version 0.3.0 syntax highlighting) | Antigravity CLI | [2026-11-13](docs/ai/2026-11-13-milestone-3.md) |

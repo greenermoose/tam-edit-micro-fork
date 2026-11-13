@@ -5,6 +5,7 @@
 #include "editor.h"
 #include "prompt.h"
 #include "render.h"
+#include "syntax.h"
 
 #include <tam.h>
 #include <tam_key.h>
@@ -91,7 +92,49 @@ static void usage(FILE *out)
         "  -h, --help                  show this help\n"
         "  -v, --version               show the version\n"
         "  --check-config              validate ~/.config/tam-edit/settings.ini\n"
-        "  --import-micro-config [DIR] import settings & bindings from micro\n");
+        "  --import-micro-config [DIR] import settings & bindings from micro\n"
+        "  --dump-syntax FILE          print per-line syntax highlight spans\n");
+}
+
+static int dump_syntax_file(const char *path)
+{
+    setlocale(LC_CTYPE, "");
+    buffer_t *b = buffer_open(path);
+    if (b == NULL) {
+        fprintf(stderr, "tam-edit: cannot open '%s'\n", path);
+        syntax_registry_free();
+        return 1;
+    }
+    b->syntax_enabled = true;
+    buffer_syntax_update_to(b, b->doc.count);
+
+    printf("filetype:%s\n", b->filetype);
+    for (size_t l = 0; l < b->doc.count; l++) {
+        size_t nrunes = 0;
+        const uint16_t *groups = buffer_syntax_get_line_groups(b, l, &nrunes);
+        printf("%zu:", l);
+        if (groups != NULL && nrunes > 0) {
+            size_t run_start = 0;
+            uint16_t cur = groups[0];
+            for (size_t r = 1; r <= nrunes; r++) {
+                bool boundary = (r == nrunes) || (groups[r] != cur);
+                if (boundary) {
+                    const char *gname = (cur == 0) ? "default" : syntax_group_name(cur);
+                    if (gname == NULL) gname = "default";
+                    printf(" %zu-%zu=%s", run_start, r, gname);
+                    if (r < nrunes) {
+                        run_start = r;
+                        cur = groups[r];
+                    }
+                }
+            }
+        }
+        putchar('\n');
+    }
+
+    buffer_unref(b);
+    syntax_registry_free();
+    return 0;
 }
 
 /* Parse SGR mouse escape sequences: \x1b[<btn;col;row[M|m] */
@@ -248,6 +291,13 @@ int main(int argc, char **argv)
             bool ok = config_import_micro(m_dir, NULL, stdout);
             return ok ? 0 : 1;
         }
+        if (strcmp(argv[i], "--dump-syntax") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "tam-edit: --dump-syntax requires a file path\n");
+                return 2;
+            }
+            return dump_syntax_file(argv[++i]);
+        }
         if (argv[i][0] == '-') {
             fprintf(stderr, "tam-edit: unknown option '%s'\n", argv[i]);
             usage(stderr);
@@ -269,6 +319,7 @@ int main(int argc, char **argv)
         if (!editor_load(&ed, files[0])) {
             fprintf(stderr, "tam-edit: %s\n", ed.message);
             editor_free(&ed);
+            syntax_registry_free();
             return 1;
         }
         for (size_t f = 1; f < file_count; f++) {
@@ -284,6 +335,7 @@ int main(int argc, char **argv)
         fprintf(stderr,
                 "tam-edit: standard input and output must be a terminal\n");
         editor_free(&ed);
+        syntax_registry_free();
         return 1;
     }
 
@@ -417,6 +469,7 @@ int main(int argc, char **argv)
     editor_free(&ed);
     clipboard_free();
     actions_free();
+    syntax_registry_free();
 
     if (g_stop) {
         static const char note[] = "tam-edit: terminated\n";

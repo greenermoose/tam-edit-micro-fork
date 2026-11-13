@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "buffer.h"
 #include "cursor.h"
+#include "syntax.h"
 #include "undo.h"
 
 #include <tam.h>
@@ -98,9 +99,25 @@ static bool line_replace(char **line, size_t *len, size_t at, size_t remove,
 /* Low-level Raw Operations for Undo/Redo Engine                              */
 /* -------------------------------------------------------------------------- */
 
+static void notify_syntax_edit(editor_t *ed, size_t start_line, size_t old_total_lines)
+{
+    if (ed->active_view && ed->active_view->buf) {
+        size_t new_total = ed->doc.count;
+        size_t old_span = 1;
+        size_t new_span = 1;
+        if (new_total > old_total_lines) {
+            new_span = 1 + (new_total - old_total_lines);
+        } else if (old_total_lines > new_total) {
+            old_span = 1 + (old_total_lines - new_total);
+        }
+        buffer_syntax_on_edit(ed->active_view->buf, start_line, old_span, new_span);
+    }
+}
+
 void editor_raw_insert(editor_t *ed, size_t line, size_t col,
                        const char *text, size_t len)
 {
+    size_t old_count = ed->doc.count;
     if (line >= ed->doc.count) {
         if (!doc_insert_line(&ed->doc, line, "", 0)) return;
     }
@@ -113,6 +130,7 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
         doc_insert_line(&ed->doc, line + 1, cur + at, cur_len - at);
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, cur_len - at, "", 0);
         editor_sync_to_active(ed);
+        notify_syntax_edit(ed, line, old_count);
         return;
     }
 
@@ -162,9 +180,10 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
         free(tail);
     }
     editor_sync_to_active(ed);
+    notify_syntax_edit(ed, line, old_count);
 }
 
-void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
+static void raw_remove_internal(editor_t *ed, size_t line, size_t col, size_t runes)
 {
     if (line >= ed->doc.count) return;
 
@@ -177,20 +196,27 @@ void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
         size_t next_len = ed->doc.lens[line + 1];
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], cur_len, 0, next, next_len);
         doc_remove_line(&ed->doc, line + 1);
-        editor_sync_to_active(ed);
         return;
     }
 
     size_t from = edit_rune_to_byte(cur, cur_len, col);
     size_t to   = edit_rune_to_byte(cur, cur_len, col + runes);
     line_replace(&ed->doc.lines[line], &ed->doc.lens[line], from, to - from, "", 0);
+}
+
+void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
+{
+    size_t old_count = ed->doc.count;
+    raw_remove_internal(ed, line, col, runes);
     editor_sync_to_active(ed);
+    notify_syntax_edit(ed, line, old_count);
 }
 
 void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *text, size_t len)
 {
     if (line >= ed->doc.count || text == NULL || len == 0) return;
 
+    size_t old_count = ed->doc.count;
     size_t nl_count = 0;
     for (size_t i = 0; i < len; i++) {
         if (text[i] == '\n') nl_count++;
@@ -198,7 +224,9 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
 
     if (nl_count == 0) {
         size_t runes = edit_line_runes(text, len);
-        editor_raw_remove(ed, line, col, runes);
+        raw_remove_internal(ed, line, col, runes);
+        editor_sync_to_active(ed);
+        notify_syntax_edit(ed, line, old_count);
         return;
     }
 
@@ -206,7 +234,7 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
     size_t first_len = first_nl - text;
     size_t first_runes = edit_line_runes(text, first_len);
     if (first_runes > 0) {
-        editor_raw_remove(ed, line, col, first_runes);
+        raw_remove_internal(ed, line, col, first_runes);
     }
 
     for (size_t i = 1; i < nl_count; i++) {
@@ -220,12 +248,13 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
     size_t last_runes = edit_line_runes(last_nl + 1, last_len);
     if (line + 1 < ed->doc.count) {
         if (last_runes > 0) {
-            editor_raw_remove(ed, line + 1, 0, last_runes);
+            raw_remove_internal(ed, line + 1, 0, last_runes);
         }
         size_t cur_runes = edit_line_runes(ed->doc.lines[line], ed->doc.lens[line]);
-        editor_raw_remove(ed, line, cur_runes, 1);
+        raw_remove_internal(ed, line, cur_runes, 1);
     }
     editor_sync_to_active(ed);
+    notify_syntax_edit(ed, line, old_count);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -548,6 +577,7 @@ void editor_init(editor_t *ed)
 
     tab_list_init(&ed->tabs);
     buffer_t *b = buffer_new(NULL);
+    b->syntax_enabled = ed->config.syntax;
     view_t *v   = view_new(b);
     v->softwrap = ed->config.softwrap;
     v->wordwrap = ed->config.wordwrap;
@@ -582,6 +612,10 @@ bool editor_load(editor_t *ed, const char *path)
     if (b == NULL) {
         editor_set_message(ed, "Could not open %s", path);
         return false;
+    }
+    b->syntax_enabled = ed->config.syntax;
+    if (ed->config.detectlimit != 100) {
+        buffer_syntax_init(b, NULL, ed->config.detectlimit);
     }
 
     if (ed->active_view != NULL) {
@@ -655,6 +689,12 @@ bool editor_vsplit(editor_t *ed, const char *path)
     buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
                                                   : ed->active_view->buf;
     if (b == NULL) return false;
+    if (path != NULL && *path != '\0') {
+        b->syntax_enabled = ed->config.syntax;
+        if (ed->config.detectlimit != 100) {
+            buffer_syntax_init(b, NULL, ed->config.detectlimit);
+        }
+    }
 
     view_t *nv = view_new(b);
     if (nv == NULL) return false;
@@ -680,6 +720,12 @@ bool editor_hsplit(editor_t *ed, const char *path)
     buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
                                                   : ed->active_view->buf;
     if (b == NULL) return false;
+    if (path != NULL && *path != '\0') {
+        b->syntax_enabled = ed->config.syntax;
+        if (ed->config.detectlimit != 100) {
+            buffer_syntax_init(b, NULL, ed->config.detectlimit);
+        }
+    }
 
     view_t *nv = view_new(b);
     if (nv == NULL) return false;
@@ -737,6 +783,10 @@ bool editor_add_tab(editor_t *ed, const char *path)
     buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
                                                   : buffer_new(NULL);
     if (b == NULL) return false;
+    b->syntax_enabled = ed->config.syntax;
+    if (ed->config.detectlimit != 100) {
+        buffer_syntax_init(b, NULL, ed->config.detectlimit);
+    }
 
     view_t *v = view_new(b);
     if (v == NULL) return false;

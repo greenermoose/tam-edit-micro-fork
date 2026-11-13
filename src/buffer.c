@@ -1,4 +1,5 @@
 #include "buffer.h"
+#include "syntax.h"
 #include "undo.h"
 
 #include <tam.h>
@@ -98,9 +99,11 @@ buffer_t *buffer_new(const char *path)
     b->crlf = false;
     b->dirty = false;
     b->scrollsync = false;
+    b->syntax_enabled = true;
 
     /* Empty buffer has one empty line */
     doc_insert_line(&b->doc, 0, "", 0);
+    buffer_syntax_init(b, NULL, 100);
     return b;
 }
 
@@ -118,6 +121,7 @@ buffer_t *buffer_open(const char *path)
     b->path = strdup(path);
     b->dirty = false;
     b->scrollsync = false;
+    b->syntax_enabled = true;
 
     size_t len = 0;
     char *data = tam_fs_read_file(path, &len);
@@ -125,6 +129,7 @@ buffer_t *buffer_open(const char *path)
         if (errno == ENOENT) {
             /* Missing file opens empty without error */
             doc_insert_line(&b->doc, 0, "", 0);
+            buffer_syntax_init(b, NULL, 100);
             return b;
         }
         free(b->path);
@@ -144,6 +149,7 @@ buffer_t *buffer_open(const char *path)
     }
 
     b->crlf = crlf;
+    buffer_syntax_init(b, NULL, 100);
     return b;
 }
 
@@ -173,6 +179,7 @@ void buffer_unref(buffer_t *buf)
     if (buf == NULL) return;
     buf->refcount--;
     if (buf->refcount <= 0) {
+        buffer_syntax_free(buf);
         doc_clear(&buf->doc);
         free(buf->path);
         undo_stack_free(&buf->undo_stack);
@@ -216,5 +223,9 @@ bool buffer_save_to(buffer_t *buf, const char *path)
     if (buf == NULL || path == NULL || *path == '\0') return false;
     free(buf->path);
     buf->path = strdup(path);
-    return buffer_save(buf);
+    bool ok = buffer_save(buf);
+    if (ok && strcmp(buf->filetype, "unknown") == 0) {
+        buffer_syntax_init(buf, NULL, 100);
+    }
+    return ok;
 }

@@ -1,4 +1,5 @@
 #include "editor.h"
+#include "syntax.h"
 
 #include <tam.h>
 #include <tam_uni.h>
@@ -283,6 +284,7 @@ static void test_save_without_path(void)
 
 void test_milestone1_run(void);
 int  run_milestone2_tests(void);
+int  run_milestone3_tests(void);
 
 int main(void)
 {
@@ -303,5 +305,7 @@ int main(void)
 
     test_milestone1_run();
     run_milestone2_tests();
+    run_milestone3_tests();
+    syntax_registry_free();
     return 0;
 }

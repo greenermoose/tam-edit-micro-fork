@@ -21,20 +21,19 @@ and documentation to the features being ported.
 | Branch | Tree | Build | Status |
 | --- | --- | --- | --- |
 | `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, still usable |
-| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.2.0: views and configuration |
+| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.3.0: syntax highlighting |
 
 New work happens on `c11`. [ROADMAP.md](ROADMAP.md) holds the phase plan and
 the milestone definitions. The Go tree stays on `master`, and on `c11` until
 the C version reaches the 1.0.0 parity gate.
 
-Version 0.2.0 (Milestone 2) delivers views and configuration. `make` builds
-`build/tam-edit`, which links only libc and libtam 0.7.0. In addition to
-Milestone 1 features, it introduces a decoupled buffer/view architecture with
-reference counting, multi-split panes (`vsplit`/`hsplit`), tab management (`Ctrl-T`,
-`Alt-,`/`Alt-.`), softwrap with sub-line cursor movement, micro `color-link`
-colorscheme parsing with truecolor rendering, native INI configuration via
-`tam_ini` (`~/.config/tam-edit/settings.ini`), `--check-config` validation, and a
-lenient JSON5 micro configuration importer (`--import-micro-config`).
+Version 0.3.0 (Milestone 3) delivers native C11 syntax highlighting. `make` builds
+`build/tam-edit`, which links only libc and libtam 0.7.0. In addition to Milestone 2
+features, it embeds all 158 micro syntax definitions and 25 colorschemes in C tables,
+implements an in-tree UTF-8 Pike-VM regex engine (`src/regex.c`), micro-parity
+incremental line-state highlighting (`src/syntax.c`) with filename/header/signature
+filetype detection, user `~/.config/tam-edit/syntax/*.yaml` override parsing,
+`setlocal filetype` / `toggle syntax` commands, and `--dump-syntax` parity output.
 
 ## Versioning
 

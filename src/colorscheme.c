@@ -1,4 +1,5 @@
 #include "colorscheme.h"
+#include "colorschemes_data.h"
 
 #include <tam.h>
 
@@ -125,6 +126,7 @@ style_t style_parse(const char *str)
 
 static void colorscheme_add_link(colorscheme_t *cs, const char *group, style_t st)
 {
+    cs->cache_valid = false;
     /* Check if group already exists */
     for (color_link_t *l = cs->links; l != NULL; l = l->next) {
         if (strcmp(l->group, group) == 0) {
@@ -207,6 +209,18 @@ void colorscheme_free(colorscheme_t *cs)
         cur = next;
     }
     cs->links = NULL;
+    cs->cache_valid = false;
+}
+
+static const char *find_embedded_colorscheme(const char *name)
+{
+    if (name == NULL) return NULL;
+    for (size_t i = 0; i < g_embedded_colorschemes_count; i++) {
+        if (strcmp(g_embedded_colorschemes[i].name, name) == 0) {
+            return g_embedded_colorschemes[i].data;
+        }
+    }
+    return NULL;
 }
 
 static bool parse_scheme_buffer(colorscheme_t *cs, const char *data,
@@ -240,15 +254,14 @@ static bool parse_scheme_buffer(colorscheme_t *cs, const char *data,
                     for (size_t s = 0; s < seen_count; s++) new_seen[s] = seen[s];
                     new_seen[seen_count] = inc_name;
 
-                    /* Search file in parent dir or runtime */
+                    /* Search file in parent dir, runtime, or embedded table */
                     char try_path[512];
+                    char *inc_data = NULL;
+                    size_t inc_len = 0;
                     if (parent_dir != NULL) {
                         snprintf(try_path, sizeof(try_path), "%s/%s.micro", parent_dir, inc_name);
-                    } else {
-                        snprintf(try_path, sizeof(try_path), "runtime/colorschemes/%s.micro", inc_name);
+                        inc_data = tam_fs_read_file(try_path, &inc_len);
                     }
-                    size_t inc_len = 0;
-                    char *inc_data = tam_fs_read_file(try_path, &inc_len);
                     if (inc_data == NULL) {
                         snprintf(try_path, sizeof(try_path), "runtime/colorschemes/%s.micro", inc_name);
                         inc_data = tam_fs_read_file(try_path, &inc_len);
@@ -256,6 +269,11 @@ static bool parse_scheme_buffer(colorscheme_t *cs, const char *data,
                     if (inc_data != NULL) {
                         parse_scheme_buffer(cs, inc_data, parent_dir, new_seen, seen_count + 1);
                         free(inc_data);
+                    } else {
+                        const char *emb = find_embedded_colorscheme(inc_name);
+                        if (emb != NULL) {
+                            parse_scheme_buffer(cs, emb, parent_dir, new_seen, seen_count + 1);
+                        }
                     }
                 }
             } else if (sscanf(line, "color-link %63s \"%127[^\"]\"", group, val) == 2) {
@@ -293,21 +311,11 @@ bool colorscheme_load_file(colorscheme_t *cs, const char *path)
     return ok;
 }
 
-bool colorscheme_load(colorscheme_t *cs, const char *name)
+static bool colorscheme_try_load_into(colorscheme_t *cs, const char *name)
 {
-    if (name == NULL || *name == '\0') name = "default";
-    strncpy(cs->name, name, sizeof(cs->name) - 1);
-
-    if (strcmp(name, "default") == 0 || strcmp(name, "monokai") == 0) {
-        /* Embedded default is always ready */
-        char path[512];
-        snprintf(path, sizeof(path), "runtime/colorschemes/%s.micro", name);
-        colorscheme_load_file(cs, path);
-        return true;
-    }
+    const char *home = getenv("HOME");
 
     /* 1. Try ~/.config/tam-edit/colorschemes */
-    const char *home = getenv("HOME");
     if (home != NULL && *home != '\0') {
         char full[512];
         snprintf(full, sizeof(full), "%s/.config/tam-edit/colorschemes/%s.micro", home, name);
@@ -330,11 +338,41 @@ bool colorscheme_load(colorscheme_t *cs, const char *name)
         if (colorscheme_load_file(cs, full)) return true;
     }
 
-    /* 4. Try runtime/colorschemes */
+    /* 4. Try embedded 25 colorschemes */
+    const char *emb = find_embedded_colorscheme(name);
+    if (emb != NULL) {
+        const char *seen[16];
+        seen[0] = name;
+        if (parse_scheme_buffer(cs, emb, NULL, seen, 1)) return true;
+    }
+
+    /* 5. Try runtime/colorschemes on disk */
     char rt_path[512];
     snprintf(rt_path, sizeof(rt_path), "runtime/colorschemes/%s.micro", name);
     if (colorscheme_load_file(cs, rt_path)) return true;
 
+    return false;
+}
+
+bool colorscheme_load(colorscheme_t *cs, const char *name)
+{
+    if (name == NULL || *name == '\0') name = "default";
+
+    colorscheme_t fresh;
+    colorscheme_init(&fresh);
+    strncpy(fresh.name, name, sizeof(fresh.name) - 1);
+
+    if (colorscheme_try_load_into(&fresh, name)) {
+        colorscheme_free(cs);
+        *cs = fresh;
+        return true;
+    }
+
+    colorscheme_free(&fresh);
+    if (strcmp(name, "default") == 0 || strcmp(name, "monokai") == 0) {
+        strncpy(cs->name, name, sizeof(cs->name) - 1);
+        return true;
+    }
     return false;
 }
 

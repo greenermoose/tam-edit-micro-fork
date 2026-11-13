@@ -1,8 +1,8 @@
 # tam-edit C11 migration roadmap
 
-**Last update:** 2026-11-12
+**Last update:** 2026-11-13
 **Owner:** Fred
-**Status:** version 0.2.0, Milestone 2 complete: views and configuration
+**Status:** version 0.3.0, Milestone 3 complete: syntax highlighting
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
@@ -11,6 +11,42 @@ This roadmap describes how tam-edit moves from Go to C11 and links only
 usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
+
+**2026-11-13 — version 0.3.0 (Milestone 3 exit: syntax highlighting).**
+Phase 5 delivers native UTF-8 syntax highlighting with embedded runtime tables,
+user YAML override parsing, and micro-parity line-state highlighting:
+- `tam_regex` engine (`src/regex.h`, `src/regex.c`): standalone UTF-8 Thompson-NFA /
+  Pike-VM regex module (specced for future extraction to `libtam`), supporting
+  literals, classes, anchors, `(?:...)` non-capturing groups, alternation, greedy
+  and lazy quantifiers, bounded `{m,n}`, `\b`/`\B`, `\d`/`\D`/`\w`/`\W`/`\s`/`\S`,
+  POSIX classes (`alnum`, `alpha`, `digit`, `graph`, `space`, `xdigit`), inline
+  `(?i)`/`(?-i)`/`(?i:...)` flags, and `\p{Sm}` Unicode math symbols, with
+  guaranteed linear-time matching.
+- Embedded runtime data (`tools/gen_runtime_data.go`, `data/`): maintainer-only
+  Go converter compiles all 158 `runtime/syntax/*.yaml` definitions and all 25
+  `runtime/colorschemes/*.micro` schemes into committed C tables (`make` does
+  not invoke Go).
+- Syntax engine & flat-YAML user overrides (`src/syntax.h`, `src/syntax.c`):
+  micro-parity filetype detection (extension/filename, header regex, signature
+  disambiguation with `detectlimit`), transitive `include` resolution, region
+  state machine (`start`, `end`, `skip`, `limit-group`, nested regions),
+  O(1) colorscheme `group_cache[512]`, 128-slot viewport line cache, incremental
+  `buffer_syntax_on_edit` convergence, and runtime loading of user overrides
+  from `~/.config/tam-edit/syntax/*.yaml` (`TAM_EDIT_CONFIG_HOME`).
+- Runtime commands & settings: `syntax` and `detectlimit` settings, `set` /
+  `setlocal` / `toggle` / `togglelocal` support for `syntax` and `filetype`,
+  statusline filetype indicator, and `--dump-syntax FILE` CLI inspection.
+- Verification & performance: 32 C unit tests passing under both `-O2` and
+  `-fsanitize=address,undefined` with zero leaks; 15-file / 83,628-rune
+  differential parity suite against Go `pkg/highlight` with 0 mismatches;
+  7 PTY smoke tests passing; libc-only linkage verified. Measured on a 10,000-line
+  C file: `build/tam-edit` = 1,012 KB unstripped (`<= 5 MB`), cold PTY startup to
+  first painted frame = 4.79 ms (`<= 25 ms`), interactive `VmHWM` = 5,152 kB
+  (~5.0 MB, `<= 15 MB`), full 10k-line EOF cold scan + viewport highlight = 82.66 ms
+  (< 0.5 ms per 50-line viewport scroll, `<= 50 ms`).
+
+Not yet present: shell execution, file operations/completion, regex search/replace,
+and legacy encodings (Milestone 4 / Phase 6).
 
 **2026-11-12 — version 0.2.0 (Milestone 2 exit: views and configuration).**
 Phase 4 delivers a decoupled buffer/view architecture, multi-split panes,

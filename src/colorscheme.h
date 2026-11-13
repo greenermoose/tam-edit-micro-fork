@@ -35,10 +35,14 @@ typedef struct color_link {
     struct color_link *next;
 } color_link_t;
 
+#define COLORSCHEME_STYLE_CACHE_SIZE 512
+
 typedef struct {
     char          name[64];
     color_link_t *links;
     style_t       default_style;
+    style_t       group_cache[COLORSCHEME_STYLE_CACHE_SIZE];
+    bool          cache_valid;
 } colorscheme_t;
 
 void    colorscheme_init(colorscheme_t *cs);

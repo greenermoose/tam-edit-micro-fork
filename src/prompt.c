@@ -1,5 +1,7 @@
 #include "prompt.h"
+#include "buffer.h"
 #include "cursor.h"
+#include "syntax.h"
 
 #include <tam.h>
 #include <tam_uni.h>
@@ -8,6 +10,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static void apply_buf_syntax_toggle(editor_t *ed, buffer_t *b, bool enabled)
+{
+    if (b == NULL) return;
+    b->syntax_enabled = enabled;
+    if (enabled) {
+        const char *req = (b->filetype[0] != '\0' && strcmp(b->filetype, "unknown") != 0)
+                              ? b->filetype : NULL;
+        buffer_syntax_init(b, req, ed->config.detectlimit);
+    }
+}
 
 void prompt_close(editor_t *ed)
 {
@@ -220,6 +233,14 @@ void search_find_prev(editor_t *ed)
     editor_set_message(ed, "Pattern not found: %s", needle);
 }
 
+static void execute_command(editor_t *ed, const char *cmd);
+
+void prompt_execute_command(editor_t *ed, const char *cmd)
+{
+    if (ed == NULL || cmd == NULL) return;
+    execute_command(ed, cmd);
+}
+
 static void execute_command(editor_t *ed, const char *cmd)
 {
     while (*cmd == ' ' || *cmd == '\t') cmd++;
@@ -317,6 +338,15 @@ static void execute_command(editor_t *ed, const char *cmd)
             if (config_set(&ed->config, opt, val)) {
                 if (strcmp(opt, "colorscheme") == 0) {
                     colorscheme_load(&ed->colorscheme, val);
+                } else if (strcmp(opt, "syntax") == 0) {
+                    if (ed->active_view) {
+                        apply_buf_syntax_toggle(ed, ed->active_view->buf, ed->config.syntax);
+                    }
+                } else if (strcmp(opt, "detectlimit") == 0) {
+                    if (ed->active_view && ed->active_view->buf &&
+                        strcmp(ed->active_view->buf->filetype, "unknown") == 0) {
+                        buffer_syntax_init(ed->active_view->buf, NULL, ed->config.detectlimit);
+                    }
                 }
                 editor_set_message(ed, "Set %s = %s", opt, val);
             } else {
@@ -337,6 +367,16 @@ static void execute_command(editor_t *ed, const char *cmd)
                 bool b = (strcmp(val, "true") == 0 || strcmp(val, "on") == 0 || strcmp(val, "1") == 0);
                 if (ed->active_view) ed->active_view->wordwrap = b;
                 editor_set_message(ed, "Setlocal wordwrap = %s", b ? "true" : "false");
+            } else if (strcmp(opt, "syntax") == 0) {
+                bool b = (strcmp(val, "true") == 0 || strcmp(val, "on") == 0 || strcmp(val, "1") == 0);
+                if (ed->active_view) apply_buf_syntax_toggle(ed, ed->active_view->buf, b);
+                editor_set_message(ed, "Setlocal syntax = %s", b ? "true" : "false");
+            } else if (strcmp(opt, "filetype") == 0) {
+                if (ed->active_view && ed->active_view->buf) {
+                    buffer_syntax_init(ed->active_view->buf, val, ed->config.detectlimit);
+                    editor_set_message(ed, "Setlocal filetype = %s",
+                                       ed->active_view->buf->filetype);
+                }
             } else {
                 editor_set_message(ed, "Unsupported local option '%s'", opt);
             }
@@ -360,6 +400,12 @@ static void execute_command(editor_t *ed, const char *cmd)
         } else if (strcmp(arg, "cursorline") == 0) {
             ed->config.cursorline = !ed->config.cursorline;
             editor_set_message(ed, "Cursorline toggled %s", ed->config.cursorline ? "on" : "off");
+        } else if (strcmp(arg, "syntax") == 0) {
+            ed->config.syntax = !ed->config.syntax;
+            if (ed->active_view) {
+                apply_buf_syntax_toggle(ed, ed->active_view->buf, ed->config.syntax);
+            }
+            editor_set_message(ed, "Global syntax toggled %s", ed->config.syntax ? "on" : "off");
         }
         return;
     }
@@ -372,6 +418,10 @@ static void execute_command(editor_t *ed, const char *cmd)
         } else if (strcmp(arg, "wordwrap") == 0 && ed->active_view) {
             ed->active_view->wordwrap = !ed->active_view->wordwrap;
             editor_set_message(ed, "Local wordwrap toggled %s", ed->active_view->wordwrap ? "on" : "off");
+        } else if (strcmp(arg, "syntax") == 0 && ed->active_view && ed->active_view->buf) {
+            bool next = !ed->active_view->buf->syntax_enabled;
+            apply_buf_syntax_toggle(ed, ed->active_view->buf, next);
+            editor_set_message(ed, "Local syntax toggled %s", next ? "on" : "off");
         }
         return;
     }

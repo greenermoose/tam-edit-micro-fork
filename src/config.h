@@ -33,6 +33,8 @@ typedef struct {
     bool rmtrailingws;
     int  truecolor;
     char clipboard[32];
+    bool syntax;
+    int  detectlimit;
 } config_t;
 
 typedef struct custom_keybind {
