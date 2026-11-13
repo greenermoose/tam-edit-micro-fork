@@ -1,11 +1,11 @@
 # Options
 
-Micro stores all of the user configuration in its configuration directory.
+tam-edit stores all of the user configuration in its configuration directory.
 
-Micro uses `$MICRO_CONFIG_HOME` as the configuration directory. If this
-environment variable is not set, it uses `$XDG_CONFIG_HOME/micro` instead. If
-that environment variable is not set, it uses `~/.config/micro` as the
-configuration directory. In the documentation, we use `~/.config/micro` to
+tam-edit uses `$TAM_EDIT_CONFIG_HOME` as the configuration directory. If this
+environment variable is not set, it uses `$XDG_CONFIG_HOME/tam-edit` instead. If
+that environment variable is not set, it uses `~/.config/tam-edit` as the
+configuration directory. In the documentation, we use `~/.config/tam-edit` to
 refer to the configuration directory (even if it may in fact be somewhere else
 if you have set either of the above environment variables).
 
@@ -17,7 +17,7 @@ Here are the available options:
     default value: `true`
 
 * `autosave`: automatically save the buffer every n seconds, where n is the
-   value of the autosave option. Also when quitting on a modified buffer, micro
+   value of the autosave option. Also when quitting on a modified buffer, tam-edit
    will automatically save and quit. Be warned, this option saves the buffer
    without prompting the user, so data may be overwritten. If this option is
    set to `0`, no autosaving is performed.
@@ -25,26 +25,26 @@ Here are the available options:
     default value: `0`
 
 * `autosu`: When a file is saved that the user doesn't have permission to
-   modify, micro will ask if the user would like to use super user
-   privileges to save the file. If this option is enabled, micro will
+   modify, tam-edit will ask if the user would like to use super user
+   privileges to save the file. If this option is enabled, tam-edit will
    automatically attempt to use super user privileges to save without
    asking the user.
 
     default value: `false`
 
-* `backup`: micro will automatically keep backups of all open buffers. Backups
-   are stored in `~/.config/micro/backups` and are removed when the buffer is
-   closed cleanly. In the case of a system crash or a micro crash, the contents
+* `backup`: tam-edit will automatically keep backups of all open buffers. Backups
+   are stored in `~/.config/tam-edit/backups` and are removed when the buffer is
+   closed cleanly. In the case of a system crash or a tam-edit crash, the contents
    of the buffer can be recovered automatically by opening the file that was
    being edited before the crash, or manually by searching for the backup in
    the backup directory. Backups are made in the background for newly modified
-   buffers every 8 seconds, or when micro detects a crash.
+   buffers every 8 seconds, or when tam-edit detects a crash.
 
     default value: `true`
 
-* `backupdir`: the directory micro should place backups in. For the default
+* `backupdir`: the directory tam-edit should place backups in. For the default
    value of `""` (empty string), the backup directory will be
-   `ConfigDir/backups`, which is `~/.config/micro/backups` by default. The
+   `ConfigDir/backups`, which is `~/.config/tam-edit/backups` by default. The
    directory specified for backups will be created if it does not exist.
 
     default value: `""` (empty string)
@@ -54,12 +54,12 @@ Here are the available options:
 
     default value: `false`
 
-* `clipboard`: specifies how micro should access the system clipboard.
+* `clipboard`: specifies how tam-edit should access the system clipboard.
    Possible values are:
     * `external`: accesses clipboard via an external tool, such as xclip/xsel
        or wl-clipboard on Linux, pbcopy/pbpaste on MacOS, and system calls on
        Windows. On Linux, if you do not have one of the tools installed, or if
-       they are not working, micro will throw an error and use an internal
+       they are not working, tam-edit will throw an error and use an internal
        clipboard.
     * `terminal`: accesses the clipboard via your terminal emulator. Note that
        there is limited support among terminal emulators for this feature
@@ -69,7 +69,7 @@ Here are the available options:
        details). Note that Gnome-terminal does not support this feature. With
        this setting, copy-paste **will** work over ssh. See `> help copypaste`
        for details.
-    * `internal`: micro will use an internal clipboard.
+    * `internal`: tam-edit will use an internal clipboard.
 
     default value: `external`
 
@@ -80,11 +80,11 @@ Here are the available options:
     default value: `0`
 
 * `colorscheme`: use the given colorscheme. This setting is `global only`.
-   The colorscheme can be either one of the colorschemes that micro comes with
+   The colorscheme can be either one of the colorschemes that tam-edit comes with
    by default (such as `default`, `solarized` or `solarized-tc`) which are
-   embedded in the micro binary, or a custom colorscheme stored in
-   `~/.config/micro/colorschemes/$(option).micro` where `$(option)` is the
-   option value. You can read more about micro's colorschemes and see the list
+   embedded in the tam-edit binary, or a custom colorscheme stored in
+   `~/.config/tam-edit/colorschemes/$(option).micro` where `$(option)` is the
+   option value. You can read more about tam-edit's colorschemes and see the list
    of default colorschemes in `> help colors`.
 
     default value: `default`
@@ -125,23 +125,23 @@ Here are the available options:
 
     default value: `utf-8`
 
-* `eofnewline`: micro will automatically add a newline to the end of the
+* `eofnewline`: tam-edit will automatically add a newline to the end of the
    file if one does not exist.
 
     default value: `true`
 
-* `fakecursor`: forces micro to render the cursor using terminal colors rather
+* `fakecursor`: forces tam-edit to render the cursor using terminal colors rather
    than the actual terminal cursor. This is useful when the terminal's cursor is
    slow or otherwise unavailable/undesirable to use.
-   Note: This option defaults to `true` in case `micro` is used in the legacy
+   Note: This option defaults to `true` in case `tam-edit` is used in the legacy
    Windows Console.
 
     default value: `false`
 
-* `fastdirty`: this determines what kind of algorithm micro uses to determine
-   if a buffer is modified or not. When `fastdirty` is on, micro just uses a
+* `fastdirty`: this determines what kind of algorithm tam-edit uses to determine
+   if a buffer is modified or not. When `fastdirty` is on, tam-edit just uses a
    boolean `modified` that is set to `true` as soon as the user makes an edit.
-   This is fast, but can be inaccurate. If `fastdirty` is off, then micro will
+   This is fast, but can be inaccurate. If `fastdirty` is off, then tam-edit will
    hash the current buffer against a hash of the original file (created when
    the buffer was loaded). This is more accurate but obviously more resource
    intensive. This option will be automatically enabled for the current buffer
@@ -149,7 +149,7 @@ Here are the available options:
 
     default value: `false`
 
-* `fileformat`: this determines what kind of line endings micro will use for
+* `fileformat`: this determines what kind of line endings tam-edit will use for
    the file. Unix line endings are just `\n` (linefeed) whereas dos line
    endings are `\r\n` (carriage return + linefeed). The two possible values for
    this option are `unix` and `dos`. The fileformat will be automatically
@@ -247,7 +247,7 @@ Here are the available options:
    move the cursor either to the matching brace character or to the character
    next to it, depending on whether the initial cursor position was on the
    brace character or next to it (i.e. "inside" or "outside" the braces).
-   With `matchbraceleft` disabled, micro will only match the brace directly
+   With `matchbraceleft` disabled, tam-edit will only match the brace directly
    under the cursor and will only jump to precisely to the matching brace.
 
     default value: `true`
@@ -262,14 +262,14 @@ Here are the available options:
 
 * `mkparents`: if a file is opened on a path that does not exist, the file
    cannot be saved because the parent directories don't exist. This option lets
-   micro automatically create the parent directories in such a situation.
+   tam-edit automatically create the parent directories in such a situation.
 
     default value: `false`
 
 * `mouse`: mouse support. When mouse support is disabled,
    usually the terminal will be able to access mouse events which can be useful
-   if you want to copy from the terminal instead of from micro (if over ssh for
-   example, because the terminal has access to the local clipboard and micro
+   if you want to copy from the terminal instead of from tam-edit (if over ssh for
+   example, because the terminal has access to the local clipboard and tam-edit
    does not).
 
     default value: `true`
@@ -290,19 +290,19 @@ Here are the available options:
 
     default value: `2`
 
-* `parsecursor`: if enabled, this will cause micro to parse filenames such as
+* `parsecursor`: if enabled, this will cause tam-edit to parse filenames such as
    `file.txt:10:5` as requesting to open `file.txt` with the cursor at line 10
    and column 5. The column number can also be dropped to open the file at a
    given line and column 0. Note that with this option enabled it is not possible
    to open a file such as `file.txt:10:5`, where `:10:5` is part of the filename.
    It is also possible to open a file with a certain cursor location by using the
-   `+LINE:COL` flag syntax. See `micro -help` for the command line options.
+   `+LINE:COL` flag syntax. See `tam-edit -help` for the command line options.
 
     default value: `false`
 
 * `paste`: treat characters sent from the terminal in a single chunk as a paste
    event rather than a series of manual key presses. If you are pasting using
-   the terminal keybinding (not `Ctrl-v`, which is micro's default paste
+   the terminal keybinding (not `Ctrl-v`, which is tam-edit's default paste
    keybinding) then it is a good idea to enable this option during the paste
    and disable once the paste is over. See `> help copypaste` for details about
    copying and pasting in a terminal environment.
@@ -310,7 +310,7 @@ Here are the available options:
     default value: `false`
 
 * `permbackup`: this option causes backups (see `backup` option) to be
-   permanently saved. With permanent backups, micro will not remove backups when
+   permanently saved. With permanent backups, tam-edit will not remove backups when
    files are closed and will never apply them to existing files. Use this option
    if you are interested in manually managing your backup files.
 
@@ -344,7 +344,7 @@ Here are the available options:
 
    default value: `prompt`
 
-* `rmtrailingws`: micro will automatically trim trailing whitespaces at ends of
+* `rmtrailingws`: tam-edit will automatically trim trailing whitespaces at ends of
    lines.
    Note: This setting overrides `keepautoindent` and isn't used at timed `autosave`
    or forced `autosave` in case the buffer didn't change. A manual save will
@@ -358,18 +358,18 @@ Here are the available options:
 
 * `savecursor`: remember where the cursor was last time the file was opened and
    put it there when you open the file again. Information is saved to
-   `~/.config/micro/buffers/`
+   `~/.config/tam-edit/buffers/`
 
     default value: `false`
 
 * `savehistory`: remember command history between closing and re-opening
-   micro. Information is saved to `~/.config/micro/buffers/history`.
+   tam-edit. Information is saved to `~/.config/tam-edit/buffers/history`.
 
     default value: `true`
 
 * `saveundo`: when this option is on, undo is saved even after you close a file
    so if you close and reopen a file, you can keep undoing. Information is
-   saved to `~/.config/micro/buffers/`.
+   saved to `~/.config/tam-edit/buffers/`.
 
     default value: `false`
 
@@ -493,20 +493,20 @@ Here are the available options:
 
     default value: `false`
 
-* `truecolor`: controls whether micro will use true colors (24-bit colors) when
+* `truecolor`: controls whether tam-edit will use true colors (24-bit colors) when
    using a colorscheme with true colors, such as `solarized-tc` or `atom-dark`.
-   * `auto`: enable usage of true color if micro detects that it is supported by
+   * `auto`: enable usage of true color if tam-edit detects that it is supported by
       the terminal, otherwise disable it.
-   * `on`: force usage of true color even if micro does not detect its support
+   * `on`: force usage of true color even if tam-edit does not detect its support
       by the terminal (of course this is not guaranteed to work well unless the
       terminal actually supports true color).
    * `off`: disable true color usage.
 
-   Note: The change will take effect after the next start of `micro`.
+   Note: The change will take effect after the next start of `tam-edit`.
 
    default value: `auto`
 
-* `useprimary` (only useful on unix): defines whether or not micro will use the
+* `useprimary` (only useful on unix): defines whether or not tam-edit will use the
    primary clipboard to copy selections in the background. This does not affect
    the normal clipboard using `Ctrl-c` and `Ctrl-v`.
 
@@ -517,7 +517,7 @@ Here are the available options:
 
     default value: `false`
 
-* `xterm`: micro will assume that the terminal it is running in conforms to
+* `xterm`: tam-edit will assume that the terminal it is running in conforms to
   `xterm-256color` regardless of what the `$TERM` variable actually contains.
    Enabling this option may cause unwanted effects if your terminal in fact
    does not conform to the `xterm-256color` standard.
@@ -545,14 +545,14 @@ or disable them:
    recent Git commit rather than the diff since opening the file.
 
 Any option you set in the editor will be saved to the file
-`~/.config/micro/settings.json` so, in effect, your configuration file will be
+`~/.config/tam-edit/settings.json` so, in effect, your configuration file will be
 created for you. If you'd like to take your configuration with you to another
 machine, simply copy the `settings.json` to the other machine.
 
 ## Settings.json file
 
 The `settings.json` file should go in your configuration directory (by default
-at `~/.config/micro`), and should contain only options which have been modified
+at `~/.config/tam-edit`), and should contain only options which have been modified
 from their default setting. Here is the full list of options in json format,
 so that you can see what the formatting should look like.
 
@@ -647,7 +647,7 @@ so that you can see what the formatting should look like.
 ## Global and local settings
 
 You can set these settings either globally or locally. Locally means that the
-setting won't be saved to `~/.config/micro/settings.json` and that it will only
+setting won't be saved to `~/.config/tam-edit/settings.json` and that it will only
 be set in the current buffer. Setting an option globally is the default, and
 will set the option in all buffers. Use the `setlocal` command to set an option
 locally rather than globally.

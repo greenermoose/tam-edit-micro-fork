@@ -4,9 +4,9 @@ This help topic is about creating plugins. If you need help installing or
 managing plugins, look for `plugin` commands in `help commands`. If you want to
 enable or disable a plugin, look for `Plugin options` in `help options`.
 
-Micro supports creating plugins with a simple Lua system. Plugins are
+tam-edit supports creating plugins with a simple Lua system. Plugins are
 folders containing Lua files and possibly other source files placed
-in `~/.config/micro/plug`. The plugin directory (within `plug`) should
+in `~/.config/tam-edit/plug`. The plugin directory (within `plug`) should
 contain at least one Lua file and a `repo.json` file. The `repo.json` file
 provides additional information such as the name of the plugin, the
 plugin's website, dependencies, etc.
@@ -14,7 +14,7 @@ plugin's website, dependencies, etc.
 from the go plugin, which has the following file structure:
 
 ```
-~/.config/micro/plug/go-plugin/
+~/.config/tam-edit/plug/go-plugin/
     go.lua
     repo.json
     help/
@@ -25,7 +25,7 @@ The `go.lua` file contains the main code for the plugin, though the
 code may be distributed across multiple Lua files. The `repo.json`
 file contains information about the plugin, such as the website,
 description, version, and any requirements. Plugins may also
-have additional files that can be added to micro's runtime files,
+have additional files that can be added to tam-edit's runtime files,
 of which there are 5 types:
 
 * Colorschemes
@@ -41,10 +41,10 @@ own directories is good practice.
 
 ## Lua callbacks
 
-Plugins use Lua but also have access to many functions, both from micro
-and from the Go standard library. Plugins can also define functions that micro
+Plugins use Lua but also have access to many functions, both from tam-edit
+and from the Go standard library. Plugins can also define functions that tam-edit
 will call when certain events happen. Here is the list of callbacks
-that micro defines:
+that tam-edit defines:
 
 * `init()`: this function should be used for your plugin initialization.
    This function is called after buffers have been initialized.
@@ -56,7 +56,7 @@ that micro defines:
    all plugins has been called.
 
 * `deinit()`: cleanup function called when your plugin is unloaded, reloaded or
-   micro exited.
+   tam-edit exited.
 
 * `onBufferOpen(buf)`: runs when a buffer is opened. The input contains
    the buffer object.
@@ -95,7 +95,7 @@ that micro defines:
 * `preRune(bufpane, rune)`: runs before the composed rune will be inserted
 
 * `onAnyEvent()`: runs when literally anything happens. It is useful for
-   detecting various changes of micro's state that cannot be detected
+   detecting various changes of tam-edit's state that cannot be detected
    using other callbacks.
 
 For example, a function that is run every time the user saves the buffer
@@ -113,25 +113,25 @@ within. This is almost always the current bufpane.
 
 All available actions are listed in the keybindings section of the help.
 
-## Accessing micro functions
+## Accessing tam-edit functions
 
-Some of micro's internal information is exposed in the form of packages, which
+Some of tam-edit's internal information is exposed in the form of packages, which
 can be imported by Lua plugins. A package can be imported in Lua, and a value
 within it can be accessed using the following syntax:
 
 ```lua
-local micro = import("micro")
-micro.Log("Hello")
+local tam-edit = import("tam-edit")
+tam-edit.Log("Hello")
 ```
 
 The packages and their contents are listed below (in Go type signatures):
 
-* `micro`
-    - `TermMessage(msg any...)`: temporarily close micro and print a
+* `tam-edit`
+    - `TermMessage(msg any...)`: temporarily close tam-edit and print a
        message
 
     - `TermError(filename string, lineNum int, err string)`: temporarily close
-       micro and print an error formatted as `filename, lineNum: err`.
+       tam-edit and print an error formatted as `filename, lineNum: err`.
 
     - `InfoBar() *InfoPane`: return the infobar BufPane object.
 
@@ -159,7 +159,7 @@ The packages and their contents are listed below (in Go type signatures):
     [Tab](https://pkg.go.dev/github.com/micro-editor/micro/v2/internal/action#Tab)
     [TabList](https://pkg.go.dev/github.com/micro-editor/micro/v2/internal/action#TabList)
 
-* `micro/config`
+* `tam-edit/config`
     - `MakeCommand(name string, action func(bp *BufPane, args[]string),
                    completer buffer.Completer)`:
        create a command with the given name, and lua callback function when
@@ -235,7 +235,7 @@ The packages and their contents are listed below (in Go type signatures):
        type of the value internally. Can return an error if the provided value
        is not valid for the given option.
 
-    - `ConfigDir`: the path to micro's currently active config directory.
+    - `ConfigDir`: the path to tam-edit's currently active config directory.
 
     Relevant links:
     [Buffer](https://pkg.go.dev/github.com/micro-editor/micro/v2/internal/buffer#Buffer)
@@ -243,14 +243,14 @@ The packages and their contents are listed below (in Go type signatures):
     [Error](https://pkg.go.dev/builtin#error)
     [filepath.Match](https://pkg.go.dev/path/filepath#Match)
 
-* `micro/shell`
+* `tam-edit/shell`
     - `ExecCommand(name string, arg ...string) (string, error)`: runs an
        executable with the given arguments, and pipes the output (stderr
        and stdout) of the executable to an internal buffer, which is
        returned as a string, along with a possible error.
 
     - `RunCommand(input string) (string, error)`: same as `ExecCommand`,
-       except this uses micro's argument parser to parse the arguments from
+       except this uses tam-edit's argument parser to parse the arguments from
        the input. For example, `cat 'hello world.txt' file.txt`, will pass
        two arguments in the `ExecCommand` argument list (quoting arguments
        will preserve spaces).
@@ -260,9 +260,9 @@ The packages and their contents are listed below (in Go type signatures):
 
     - `RunInteractiveShell(input string, wait bool, getOutput bool)
                           (string, error)`:
-       temporarily closes micro and runs the given command in the terminal.
-       If `wait` is true, micro will wait for the user to press enter before
-       returning to text editing. If `getOutput` is true, micro will redirect
+       temporarily closes tam-edit and runs the given command in the terminal.
+       If `wait` is true, tam-edit will wait for the user to press enter before
+       returning to text editing. If `getOutput` is true, tam-edit will redirect
        stdout from the command to the returned string.
 
     - `JobStart(cmd string, onStdout, onStderr,
@@ -308,7 +308,7 @@ The packages and their contents are listed below (in Go type signatures):
     [BufPane](https://pkg.go.dev/github.com/micro-editor/micro/v2/internal/action#BufPane)
     [Error](https://pkg.go.dev/builtin#error)
 
-* `micro/buffer`
+* `tam-edit/buffer`
     - `NewMessage(owner string, msg string, start, end, Loc, kind MsgType)
                   *Message`:
        creates a new message with an owner over a range defined by the start
@@ -352,7 +352,7 @@ The packages and their contents are listed below (in Go type signatures):
     [Buffer](https://pkg.go.dev/github.com/micro-editor/micro/v2/internal/buffer#Buffer)
     [Error](https://pkg.go.dev/builtin#error)
 
-* `micro/util`
+* `tam-edit/util`
     - `RuneAt(str string, idx int) string`: returns the utf8 rune at a
        given index within a string.
     - `GetLeadingWhitespace(s string) string`: returns the leading
@@ -361,8 +361,8 @@ The packages and their contents are listed below (in Go type signatures):
        string is a word character.
     - `String(b []byte) string`: converts a byte array to a string.
     - `Unzip(src, dest string) error`: unzips a file to given folder.
-    - `Version`: micro's version number or commit hash
-    - `SemVersion`: micro's semantic version
+    - `Version`: tam-edit's version number or commit hash
+    - `SemVersion`: tam-edit's semantic version
     - `HttpRequest(method string, url string, headers []string)
                   (http.Response, error)`: makes a http request.
     - `CharacterCountInString(str string) int`: returns the number of
@@ -389,13 +389,13 @@ Note that Lua uses the `:` syntax to call a function rather than Go's `.`
 syntax.
 
 ```go
-micro.InfoBar().Message()
+tam-edit.InfoBar().Message()
 ```
 
 turns to
 
 ```lua
-micro.InfoBar():Message()
+tam-edit.InfoBar():Message()
 ```
 
 ## Accessing the Go standard library
@@ -408,12 +408,12 @@ Simply import the package you'd like, and then you can use it. For example:
 ```lua
 local ioutil = import("io/ioutil")
 local fmt = import("fmt")
-local micro = import("micro")
+local tam-edit = import("tam-edit")
 
 local data, err = ioutil.ReadFile("SomeFile.txt")
 
 if err ~= nil then
-    micro.InfoBar():Error("Error reading file: SomeFile.txt")
+    tam-edit.InfoBar():Error("Error reading file: SomeFile.txt")
 else
     -- Data is returned as an array of bytes
     -- Using Sprintf will convert it to a string
@@ -467,7 +467,7 @@ like to add a help topic to your plugin called `test`, you would create a
 `test.md` file and call the function:
 
 ```lua
-config = import("micro/config")
+config = import("tam-edit/config")
 config.AddRuntimeFile("test", config.RTHelp, "test.md")
 ```
 
@@ -480,7 +480,7 @@ runtime.
 
 ## Default plugins
 
-The following plugins come pre-installed with micro:
+The following plugins come pre-installed with tam-edit:
 
 * `autoclose`: automatically closes brackets, quotes, etc...
 * `comment`: provides automatic commenting for a number of languages
@@ -503,13 +503,13 @@ your own plugins.
 
 ## Plugin Manager
 
-Micro also has a built in plugin manager, which you can invoke with the
-`> plugin ...` command, or in the shell with `micro -plugin ...`.
+tam-edit also has a built in plugin manager, which you can invoke with the
+`> plugin ...` command, or in the shell with `tam-edit -plugin ...`.
 
 For the valid commands you can use, see the `commands` help topic.
 
 The manager fetches plugins from the channels (which is simply a list of plugin
-metadata) which it knows about. By default, micro only knows about the [official
+metadata) which it knows about. By default, tam-edit only knows about the [official
 channel](https://github.com/micro-editor/plugin-channel) but you can
 add your own third-party channels using the `pluginchannels` option and you can
 directly link third-party plugins to allow installation through the plugin
@@ -530,7 +530,7 @@ This file will contain the metadata for your plugin. Here is an example:
       "Version": "1.0.0",
       "Url": "https://github.com/user/plugin/archive/v1.0.0.zip",
       "Require": {
-        "micro": ">=1.0.3"
+        "tam-edit": ">=1.0.3"
       }
     }
   ]

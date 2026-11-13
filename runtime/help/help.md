@@ -1,9 +1,9 @@
-# Micro help text
+# tam-edit help text
 
-Micro is an easy to use, intuitive, text editor that takes advantage of the
+tam-edit is an easy to use, intuitive, text editor that takes advantage of the
 full capabilities of modern terminals.
 
-Micro can be controlled by commands entered on the command bar, or with
+tam-edit can be controlled by commands entered on the command bar, or with
 keybindings. To open the command bar, press `Ctrl-e`: the `>` prompt will
 display. From now on, when the documentation shows a command to run (such as
 `> help`), press `Ctrl-e` and type the command followed by enter.
@@ -31,7 +31,7 @@ Press `Ctrl-w` to move between splits, and type `> vsplit filename` or
 
 ## Accessing more help
 
-Micro has a built-in help system which can be accessed with the `> help` command.
+tam-edit has a built-in help system which can be accessed with the `> help` command.
 
 To view help for the various available topics, press `Ctrl-e` to access command
 mode and type in `> help` followed by a topic. Typing just `> help` will open
@@ -47,11 +47,11 @@ Here are the available help topics:
    what they do
 * `commands`: Gives a list of all the commands and what they do
 * `options`: Gives a list of all the options you can customize
-* `plugins`: Explains how micro's plugin system works and how to create your own
+* `plugins`: Explains how tam-edit's plugin system works and how to create your own
    plugins
-* `colors`: Explains micro's colorscheme and syntax highlighting engine and how
+* `colors`: Explains tam-edit's colorscheme and syntax highlighting engine and how
    to create your own colorschemes or add new languages to the engine
-* `copypaste`: Explains micro's copy and paste usage and configuration.
+* `copypaste`: Explains tam-edit's copy and paste usage and configuration.
    It describes how copy and paste is working on different operating systems and
    setups.
 
@@ -59,5 +59,5 @@ For example, to open the help page on plugins you would run `> help plugins`.
 
 I recommend looking at the `tutorial` help file because it is short for each
 section and gives concrete examples of how to use the various configuration
-options in micro. However, it does not give the in-depth documentation that the
+options in tam-edit. However, it does not give the in-depth documentation that the
 other topics provide.

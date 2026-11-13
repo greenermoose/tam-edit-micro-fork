@@ -4,7 +4,7 @@ The command bar is opened by pressing `Ctrl-e`. It is a single-line buffer,
 meaning that all keybindings from a normal buffer are supported (as well
 as mouse and selection).
 
-When running a command, you can use extra syntax that micro will expand before
+When running a command, you can use extra syntax that tam-edit will expand before
 running the command. To use an argument with a space in it, put it in
 quotes. The command bar parser uses the same rules for parsing arguments that
 `/bin/sh` would use (single quotes, double quotes, escaping). The command bar
@@ -12,9 +12,9 @@ does not look up environment variables.
 
 # Commands
 
-Micro provides the following commands that can be executed at the command-bar
+tam-edit provides the following commands that can be executed at the command-bar
 by pressing `Ctrl-e` and entering the command. Arguments are placed in single
-quotes here but these are not necessary when entering the command in micro.
+quotes here but these are not necessary when entering the command in tam-edit.
 
 * `bind 'key' 'action'`: creates a keybinding from key to action. See the
    `keybindings` documentation for more information about binding keys.
@@ -35,7 +35,7 @@ quotes here but these are not necessary when entering the command in micro.
 * `save ['filename']`: saves the current buffer. If the file is provided it
    will 'save as' the filename.
 
-* `quit`: quits micro.
+* `quit`: quits tam-edit.
 
 * `goto 'line[:col]'`: goes to the given absolute line (and optional column)
    number.
@@ -144,8 +144,8 @@ quotes here but these are not necessary when entering the command in micro.
 * `retab`: Replaces all leading tabs with spaces or leading spaces with tabs
    depending on the value of `tabstospaces`.
 
-* `raw`: micro will open a new tab and show the escape sequence for every event
-   it receives from the terminal. This shows you what micro actually sees from
+* `raw`: tam-edit will open a new tab and show the escape sequence for every event
+   it receives from the terminal. This shows you what tam-edit actually sees from
    the terminal and helps you see which bindings aren't possible and why. This
    is most useful for debugging keybindings.
 

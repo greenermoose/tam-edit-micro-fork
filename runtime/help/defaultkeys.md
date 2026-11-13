@@ -13,7 +13,7 @@ can change it!
 |---------- |-------------------------------------------------------------------------------------------------- |
 | Ctrl-e    | Open a command prompt for running commands (see `> help commands` for a list of valid commands).  |
 | Tab       | In command prompt, it will autocomplete if possible.                                              |
-| Ctrl-b    | Run a shell command (this will close micro while your command executes).                          |
+| Ctrl-b    | Run a shell command (this will close tam-edit while your command executes).                          |
 
 ### Navigation
 
@@ -60,7 +60,7 @@ you can use `Ctrl-n` and `Ctrl-p` to cycle through matches.
 
 | Key       | Description of function                                           |
 |---------- |------------------------------------------------------------------ |
-| Ctrl-q    | Close current file (quits micro if this is the last file open)    |
+| Ctrl-q    | Close current file (quits tam-edit if this is the last file open)    |
 | Ctrl-o    | Open a file (prompts for filename)                                |
 | Ctrl-s    | Save current file                                                 |
 

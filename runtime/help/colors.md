@@ -1,14 +1,14 @@
 # Colors
 
-This help page aims to cover two aspects of micro's syntax highlighting engine:
+This help page aims to cover two aspects of tam-edit's syntax highlighting engine:
 
 * How to create colorschemes and use them.
-* How to create syntax files to add to the list of languages micro can
+* How to create syntax files to add to the list of languages tam-edit can
   highlight.
 
 ## Colorschemes
 
-To change your colorscheme, press `Ctrl-e` in micro to bring up the command
+To change your colorscheme, press `Ctrl-e` in tam-edit to bring up the command
 prompt, and type:
 
 ```
@@ -17,7 +17,7 @@ set colorscheme twilight
 
 (or whichever colorscheme you choose).
 
-Micro comes with a number of colorschemes by default. The colorschemes that you
+tam-edit comes with a number of colorschemes by default. The colorschemes that you
 can display will depend on what kind of color support your terminal has.
 
 Omit color-link default "[fg color],[bg color]" will make the background color match the terminal's, and transparency if set.
@@ -48,9 +48,9 @@ color support comes in three flavors.
   16-color palette is ignored when using true-color mode (this means the
   colors while using the terminal emulator will be slightly off). Not all
   terminals support true color but at this point most do (see below).
-  True-color colorschemes in micro typically end with `-tc`, such as
+  True-color colorschemes in tam-edit typically end with `-tc`, such as
   `solarized-tc`, `atom-dark`, `material-tc`, etc... If true color is not
-  enabled but a true color colorscheme is used, micro will do its best to
+  enabled but a true color colorscheme is used, tam-edit will do its best to
   approximate the colors to the available 256 colors.
 
 Here is the list of colorschemes:
@@ -80,11 +80,11 @@ These may vary widely based on the 16 colors selected for your terminal.
 
 ### True color
 
-Micro enables true color support by default as long as it detects that the
+tam-edit enables true color support by default as long as it detects that the
 terminal supports it (which is usually indicated by the environment variable
 `COLORTERM` being set to `truecolor`, `24bit` or `24-bit`). You can also force
 enabling it unconditionally by setting the option `truecolor` to `on` (or
-alternatively by setting the environment variable `MICRO_TRUECOLOR` to 1, which
+alternatively by setting the environment variable `TAM_EDIT_TRUECOLOR` to 1, which
 is supported for backward compatibility).
 
 * `solarized-tc`: this is the solarized colorscheme for true color.
@@ -96,11 +96,11 @@ is supported for backward compatibility).
 
 ## Creating a Colorscheme
 
-Micro's colorschemes are also extremely simple to create. The default ones can
+tam-edit's colorschemes are also extremely simple to create. The default ones can
 be found
 [here](https://github.com/micro-editor/micro/tree/master/runtime/colorschemes).
 
-Custom colorschemes should be placed in the `~/.config/micro/colorschemes`
+Custom colorschemes should be placed in the `~/.config/tam-edit/colorschemes`
 directory.
 
 A number of custom directives are placed in a `.micro` file. Colorschemes are
@@ -155,7 +155,7 @@ Then you can use the terminals 256 colors by using their numbers 1-256 (numbers
 1-16 will refer to the named colors).
 
 If the user's terminal supports true color, then you can also specify colors
-exactly using their hex codes. If the terminal is not true color but micro is
+exactly using their hex codes. If the terminal is not true color but tam-edit is
 told to use a true color colorscheme it will attempt to map the colors to the
 available 256 colors.
 
@@ -206,7 +206,7 @@ Here is a list of the colorscheme groups that you can use:
 * tab-error (Color of tab vs space errors when `hltaberrors` is enabled)
 * trailingws (Color of trailing whitespaces when `hltrailingws` is enabled)
 
-Colorschemes must be placed in the `~/.config/micro/colorschemes` directory to
+Colorschemes must be placed in the `~/.config/tam-edit/colorschemes` directory to
 be used.
 
 ---
@@ -215,17 +215,17 @@ In addition to the main colorscheme groups, there are subgroups that you can
 specify by adding `.subgroup` to the group. If you're creating your own custom
 syntax files, you can make use of your own subgroups.
 
-If micro can't match the subgroup, it'll default to the root group, so  it's
+If tam-edit can't match the subgroup, it'll default to the root group, so  it's
 safe and recommended to use subgroups in your custom syntax files.
 
-For example if `constant.string` is found in your colorscheme, micro will us
+For example if `constant.string` is found in your colorscheme, tam-edit will us
 that for highlighting strings. If it's not found, it will use constant instead.
-Micro tries to match the largest set of groups it can find in the colorscheme
-definitions, so if, for example `constant.bool.true` is found then micro will
+tam-edit tries to match the largest set of groups it can find in the colorscheme
+definitions, so if, for example `constant.bool.true` is found then tam-edit will
 use that. If `constant.bool.true` is not found but `constant.bool` is found
-micro will use `constant.bool`. If not, it uses `constant`.
+tam-edit will use `constant.bool`. If not, it uses `constant`.
 
-Here's a list of subgroups used in micro's built-in syntax files.
+Here's a list of subgroups used in tam-edit's built-in syntax files.
 
 * comment.bright (Some filetypes have distinctions between types of comments)
 * constant.bool
@@ -259,12 +259,12 @@ theme can be seen as an example, which links to the chosen default colorscheme.
 The syntax files are written in yaml-format and specify how to highlight
 languages.
 
-Micro's builtin syntax highlighting tries very hard to be sane, sensible and
-provide ample coverage of the meaningful elements of a language. Micro has
+tam-edit's builtin syntax highlighting tries very hard to be sane, sensible and
+provide ample coverage of the meaningful elements of a language. tam-edit has
 syntax files built in for over 100 languages now! However, there may be
-situations where you find Micro's highlighting to be insufficient or not to
+situations where you find tam-edit's highlighting to be insufficient or not to
 your liking. The good news is that you can create your own syntax files, and
-place them in  `~/.config/micro/syntax` and Micro will use those instead.
+place them in  `~/.config/tam-edit/syntax` and tam-edit will use those instead.
 
 ### Filetype definition
 
@@ -283,7 +283,7 @@ detect:
     filename: "\\.go$"
 ```
 
-Micro will match this regex against a given filename to detect the filetype.
+tam-edit will match this regex against a given filename to detect the filetype.
 
 In addition to the `filename` regex (or even instead of it) you can provide
 a `header` regex that will check the first line of the file. For example:
@@ -306,7 +306,7 @@ will be used.
 Finally, in addition to `filename` and/or `header` (but not instead of them)
 you may also provide an optional `signature` regex which is useful for resolving
 ambiguities when there are multiple syntax files matching the same file with
-different filetypes. If a `signature` regex is given, micro will match a certain
+different filetypes. If a `signature` regex is given, tam-edit will match a certain
 amount of first lines in the file (this amount is determined by the `detectlimit`
 option) against this regex, and if any of the lines match, this syntax file's
 filetype will be preferred over other matching filetypes.
@@ -404,12 +404,12 @@ files) is not supported yet.
 
 ### Default syntax highlighting
 
-If micro cannot detect the filetype of the file, it falls back to using the
+If tam-edit cannot detect the filetype of the file, it falls back to using the
 default syntax highlighting for it, which highlights just the bare minimum:
 email addresses, URLs etc.
 
 Just like in other cases, you can override the default highlighting by adding
-your own custom `default.yaml` file to `~/.config/micro/syntax`.
+your own custom `default.yaml` file to `~/.config/tam-edit/syntax`.
 
 For example, if you work with various config files that use the `#` sign to mark
 the beginning of a comment, you can use the following custom `default.yaml` to

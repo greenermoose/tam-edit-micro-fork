@@ -1,18 +1,18 @@
 # Keybindings
 
-Micro has a plethora of hotkeys that make it easy and powerful to use and all
+tam-edit has a plethora of hotkeys that make it easy and powerful to use and all
 hotkeys are fully customizable to your liking.
 
-Custom keybindings are stored internally in micro if changed with the `> bind`
-command or can also be added in the file `~/.config/micro/bindings.json` as
+Custom keybindings are stored internally in tam-edit if changed with the `> bind`
+command or can also be added in the file `~/.config/tam-edit/bindings.json` as
 discussed below. For a list of the default keybindings in the json format used
-by micro, please see the end of this file. For a more user-friendly list with
+by tam-edit, please see the end of this file. For a more user-friendly list with
 explanations of what the default hotkeys are and what they do, please see
 `> help defaultkeys` (a json formatted list of default keys is included
 at the end of this document).
 
-If `~/.config/micro/bindings.json` does not exist, you can simply create it.
-Micro will know what to do with it.
+If `~/.config/tam-edit/bindings.json` does not exist, you can simply create it.
+tam-edit will know what to do with it.
 
 You can use Ctrl + arrows to move word by word (Alt + arrows for Mac). Alt + left and right
 move the cursor to the start and end of the line (Ctrl + left/right for Mac), and Ctrl + up and down move the
@@ -22,7 +22,7 @@ You can hold shift with all of these movement actions to select while moving.
 
 ## Rebinding keys
 
-The bindings may be rebound using the `~/.config/micro/bindings.json` file.
+The bindings may be rebound using the `~/.config/tam-edit/bindings.json` file.
 Each key is bound to an action.
 
 For example, to bind `Ctrl-y` to undo and `Ctrl-z` to redo, you could put the
@@ -41,7 +41,7 @@ as simply `Ctrl` bindings. This means that `CtrlG`, `Ctrl-G`, and `Ctrl-g` all
 mean the same thing. However, for `Alt` this is not the case: `AltG` and `Alt-G`
 mean `Alt-Shift-g`, while `Alt-g` does not require the Shift modifier.
 
-In addition to editing your `~/.config/micro/bindings.json`, you can run
+In addition to editing your `~/.config/tam-edit/bindings.json`, you can run
 `>bind <keycombo> <action>` For a list of bindable actions, see below.
 
 You can also chain commands when rebinding. For example, if you want `Alt-s` to
@@ -98,7 +98,7 @@ Now when you press `Alt-p` the `pwd` command will be executed which will show
 your working directory in the infobar.
 
 You can also bind an "editable" command with `command-edit:`. This means that
-micro won't immediately execute the command when you press the binding, but
+tam-edit won't immediately execute the command when you press the binding, but
 instead just place the string in the infobar in command mode. For example,
 you could rebind `Ctrl-g` to `> help`:
 
@@ -115,7 +115,7 @@ cursor placement).
 ## Binding Lua functions
 
 You can also bind a key to a Lua function provided by a plugin, or by your own
-`~/.config/micro/init.lua`. For example:
+`~/.config/tam-edit/init.lua`. For example:
 
 ```jsonc
 {
@@ -127,17 +127,17 @@ where `foo` is the name of the plugin and `bar` is the name of the lua function
 in it, e.g.:
 
 ```lua
-local micro = import("micro")
+local tam-edit = import("tam-edit")
 
 function bar(bp)
-    micro.InfoBar():Message("Bar action triggered")
+    tam-edit.InfoBar():Message("Bar action triggered")
     return true
 end
 ```
 
 See `> help plugins` for more informations on how to write lua functions.
 
-For `~/.config/micro/init.lua` the plugin name is `initlua` (so the keybinding
+For `~/.config/tam-edit/init.lua` the plugin name is `initlua` (so the keybinding
 in this example would be `"Alt-q": "lua:initlua.bar"`).
 
 The currently active bufpane is passed to the lua function as the argument. If
@@ -164,16 +164,16 @@ get all of its information about key events through the terminal. The terminal
 sends these events in the form of escape sequences often (but not always)
 starting with `0x1b`.
 
-For example, if micro reads `\x1b[1;5D`, on most terminals this will mean the
+For example, if tam-edit reads `\x1b[1;5D`, on most terminals this will mean the
 user pressed CtrlLeft.
 
 For many key chords though, the terminal won't send any escape code or will
 send an escape code already in use. For example for `CtrlBackspace`, my
 terminal sends `\u007f` (note this doesn't start with `0x1b`), which it also
-sends for `Backspace` meaning micro can't bind `CtrlBackspace`.
+sends for `Backspace` meaning tam-edit can't bind `CtrlBackspace`.
 
 However, some terminals do allow you to bind keys to send specific escape
-sequences you define. Then from micro you can directly bind those escape
+sequences you define. Then from tam-edit you can directly bind those escape
 sequences to actions. For example, to bind `CtrlBackspace` you can instruct
 your terminal to send `\x1bctrlback` and then bind it in `bindings.json`:
 
@@ -752,13 +752,13 @@ Note: On some old terminal emulators and on Windows machines, `Ctrl-h` should be
 used for backspace.
 
 Additionally, alt keys can be bound by using `Alt-key`. For example `Alt-a` or
-`Alt-Up`. Micro supports an optional `-` between modifiers like `Alt` and
+`Alt-Up`. tam-edit supports an optional `-` between modifiers like `Alt` and
 `Ctrl` so `Alt-a` could be rewritten as `Alta` (case matters for alt bindings).
 This is why in the default keybindings you can see `AltShiftLeft` instead of
 `Alt-ShiftLeft` (they are equivalent).
 
-Please note that terminal emulators are strange applications and micro only
+Please note that terminal emulators are strange applications and tam-edit only
 receives key events that the terminal decides to send. Some terminal emulators
-may not send certain events even if this document says micro can receive the
-event. To see exactly what micro receives from the terminal when you press a
+may not send certain events even if this document says tam-edit can receive the
+event. To see exactly what tam-edit receives from the terminal when you press a
 key, run the `> raw` command.
