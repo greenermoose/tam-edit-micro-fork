@@ -1,10 +1,12 @@
 #include "editor.h"
+#include "buffer.h"
 #include "cursor.h"
 #include "undo.h"
 
 #include <tam.h>
 #include <tam_uni.h>
 
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,15 +37,6 @@ static bool doc_reserve(edit_doc_t *d, size_t need)
 
     d->cap = cap;
     return true;
-}
-
-static void doc_clear(edit_doc_t *d)
-{
-    if (d == NULL) return;
-    for (size_t i = 0; i < d->count; i++) free(d->lines[i]);
-    free(d->lines);
-    free(d->lens);
-    memset(d, 0, sizeof(*d));
 }
 
 static bool doc_insert_line(edit_doc_t *d, size_t at,
@@ -101,52 +94,6 @@ static bool line_replace(char **line, size_t *len, size_t at, size_t remove,
     return true;
 }
 
-static bool doc_from_text(edit_doc_t *d, const char *data, size_t len,
-                          bool *crlf_out)
-{
-    bool crlf = false;
-    for (size_t i = 0; i + 1 < len; i++) {
-        if (data[i] == '\n') {
-            crlf = i > 0 && data[i - 1] == '\r';
-            break;
-        }
-    }
-
-    size_t start = 0;
-    for (size_t i = 0; i <= len; i++) {
-        if (i != len && data[i] != '\n') continue;
-
-        size_t end = i;
-        if (crlf && end > start && data[end - 1] == '\r') end--;
-
-        if (!doc_insert_line(d, d->count, data + start, end - start)) {
-            return false;
-        }
-        start = i + 1;
-    }
-
-    if (crlf_out != NULL) *crlf_out = crlf;
-    return true;
-}
-
-static bool doc_join_text(edit_doc_t *d, bool crlf, tam_str_t *out)
-{
-    const char *sep = crlf ? "\r\n" : "\n";
-    size_t sep_len = strlen(sep);
-
-    for (size_t i = 0; i < d->count; i++) {
-        if (i > 0) {
-            *out = tam_str_cat_len(*out, sep, sep_len);
-            if (*out == NULL) return false;
-        }
-        if (d->lens[i] > 0) {
-            *out = tam_str_cat_len(*out, d->lines[i], d->lens[i]);
-            if (*out == NULL) return false;
-        }
-    }
-    return true;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Low-level Raw Operations for Undo/Redo Engine                              */
 /* -------------------------------------------------------------------------- */
@@ -165,15 +112,14 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
     if (len == 1 && text[0] == '\n') {
         doc_insert_line(&ed->doc, line + 1, cur + at, cur_len - at);
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, cur_len - at, "", 0);
+        editor_sync_to_active(ed);
         return;
     }
 
-    /* Check if text contains any newlines */
     const char *nl = memchr(text, '\n', len);
     if (nl == NULL) {
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, 0, text, len);
     } else {
-        /* Multi-line insertion */
         size_t first_part_len = nl - text;
         size_t rest_offset    = first_part_len + 1;
         size_t tail_len       = cur_len - at;
@@ -183,10 +129,8 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
             tail[tail_len] = '\0';
         }
 
-        /* 1. Truncate current line at 'at' and append first part */
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], at, cur_len - at, text, first_part_len);
 
-        /* 2. Process subsequent lines */
         size_t cur_l = line + 1;
         const char *p = text + rest_offset;
         size_t rem = len - rest_offset;
@@ -194,7 +138,6 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
         while (rem > 0) {
             const char *next_nl = memchr(p, '\n', rem);
             if (next_nl == NULL) {
-                /* Last part: append tail */
                 size_t p_len = rem;
                 size_t combined_len = p_len + (tail ? tail_len : 0);
                 char *combined = malloc(combined_len + 1);
@@ -218,6 +161,7 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
         }
         free(tail);
     }
+    editor_sync_to_active(ed);
 }
 
 void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
@@ -229,17 +173,18 @@ void editor_raw_remove(editor_t *ed, size_t line, size_t col, size_t runes)
     size_t line_runes = edit_line_runes(cur, cur_len);
 
     if (col == line_runes && runes == 1 && line + 1 < ed->doc.count) {
-        /* Join line with line + 1 */
         char *next = ed->doc.lines[line + 1];
         size_t next_len = ed->doc.lens[line + 1];
         line_replace(&ed->doc.lines[line], &ed->doc.lens[line], cur_len, 0, next, next_len);
         doc_remove_line(&ed->doc, line + 1);
+        editor_sync_to_active(ed);
         return;
     }
 
     size_t from = edit_rune_to_byte(cur, cur_len, col);
     size_t to   = edit_rune_to_byte(cur, cur_len, col + runes);
     line_replace(&ed->doc.lines[line], &ed->doc.lens[line], from, to - from, "", 0);
+    editor_sync_to_active(ed);
 }
 
 void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *text, size_t len)
@@ -257,7 +202,6 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
         return;
     }
 
-    /* 1. Remove first segment from line */
     const char *first_nl = memchr(text, '\n', len);
     size_t first_len = first_nl - text;
     size_t first_runes = edit_line_runes(text, first_len);
@@ -265,14 +209,12 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
         editor_raw_remove(ed, line, col, first_runes);
     }
 
-    /* 2. Remove intermediate lines */
     for (size_t i = 1; i < nl_count; i++) {
         if (line + 1 < ed->doc.count) {
             doc_remove_line(&ed->doc, line + 1);
         }
     }
 
-    /* 3. Remove last segment from line + 1 */
     const char *last_nl = memrchr(text, '\n', len);
     size_t last_len = (text + len) - (last_nl + 1);
     size_t last_runes = edit_line_runes(last_nl + 1, last_len);
@@ -280,10 +222,10 @@ void editor_raw_remove_str(editor_t *ed, size_t line, size_t col, const char *te
         if (last_runes > 0) {
             editor_raw_remove(ed, line + 1, 0, last_runes);
         }
-        /* 4. Join line + 1 onto line */
         size_t cur_runes = edit_line_runes(ed->doc.lines[line], ed->doc.lens[line]);
         editor_raw_remove(ed, line, cur_runes, 1);
     }
+    editor_sync_to_active(ed);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -362,32 +304,268 @@ size_t edit_visual_to_rune(const char *line, size_t len, int cells)
     return col;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Softwrap Helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+size_t edit_softwrap_line_sublines(const char *line, size_t len, int width,
+                                   int tabsize, bool wordwrap)
+{
+    if (width <= 1) return 1;
+    if (tabsize <= 0) tabsize = 4;
+
+    size_t sublines = 1;
+    int vx = 0;
+    size_t i = 0;
+    size_t last_word_end = 0;
+
+    while (i < len) {
+        uint32_t cp = 0;
+        size_t used = tam_utf8_decode(line + i, len - i, &cp);
+        if (used == 0) break;
+
+        int cw = (cp == '\t') ? (tabsize - (vx % tabsize)) :
+                 ((cp < 0x20 || cp == 0x7F) ? 1 : tam_uni_width(cp));
+
+        if (vx + cw > width && vx > 0) {
+            if (wordwrap && last_word_end > 0 && last_word_end < i) {
+                i = last_word_end;
+                sublines++;
+                vx = 0;
+                last_word_end = 0;
+                continue;
+            } else {
+                sublines++;
+                vx = 0;
+                last_word_end = 0;
+            }
+        }
+
+        if (isspace((unsigned char)cp) || cp == '-' || cp == '_' ||
+            cp == '/' || cp == '\\') {
+            last_word_end = i + used;
+        }
+
+        vx += cw;
+        i += used;
+    }
+
+    return sublines;
+}
+
+void edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
+                               int width, int tabsize, bool wordwrap,
+                               int *subline_out, int *vx_out)
+{
+    if (width <= 1) width = 80;
+    if (tabsize <= 0) tabsize = 4;
+
+    int subline = 0;
+    int vx = 0;
+    size_t i = 0;
+    size_t cur_rune = 0;
+    size_t last_word_end = 0;
+    size_t last_word_rune = 0;
+
+    while (i < len && cur_rune < rune_col) {
+        uint32_t cp = 0;
+        size_t used = tam_utf8_decode(line + i, len - i, &cp);
+        if (used == 0) break;
+
+        int cw = (cp == '\t') ? (tabsize - (vx % tabsize)) :
+                 ((cp < 0x20 || cp == 0x7F) ? 1 : tam_uni_width(cp));
+
+        if (vx + cw > width && vx > 0) {
+            if (wordwrap && last_word_end > 0 && last_word_end < i) {
+                i = last_word_end;
+                cur_rune = last_word_rune;
+                subline++;
+                vx = 0;
+                last_word_end = 0;
+                continue;
+            } else {
+                subline++;
+                vx = 0;
+                last_word_end = 0;
+            }
+        }
+
+        if (isspace((unsigned char)cp) || cp == '-' || cp == '_' ||
+            cp == '/' || cp == '\\') {
+            last_word_end = i + used;
+            last_word_rune = cur_rune + 1;
+        }
+
+        vx += cw;
+        i += used;
+        cur_rune++;
+    }
+
+    if (subline_out != NULL) *subline_out = subline;
+    if (vx_out != NULL) *vx_out = vx;
+}
+
+size_t edit_softwrap_vloc_to_rune(const char *line, size_t len, int target_subline,
+                                  int target_vx, int width, int tabsize,
+                                  bool wordwrap)
+{
+    if (width <= 1) width = 80;
+    if (tabsize <= 0) tabsize = 4;
+
+    int subline = 0;
+    int vx = 0;
+    size_t i = 0;
+    size_t cur_rune = 0;
+    size_t last_word_end = 0;
+    size_t last_word_rune = 0;
+
+    while (i < len) {
+        if (subline == target_subline && vx >= target_vx) {
+            return cur_rune;
+        }
+
+        uint32_t cp = 0;
+        size_t used = tam_utf8_decode(line + i, len - i, &cp);
+        if (used == 0) break;
+
+        int cw = (cp == '\t') ? (tabsize - (vx % tabsize)) :
+                 ((cp < 0x20 || cp == 0x7F) ? 1 : tam_uni_width(cp));
+
+        if (vx + cw > width && vx > 0) {
+            if (wordwrap && last_word_end > 0 && last_word_end < i) {
+                i = last_word_end;
+                cur_rune = last_word_rune;
+                subline++;
+                vx = 0;
+                last_word_end = 0;
+                if (subline > target_subline) return cur_rune;
+                continue;
+            } else {
+                subline++;
+                vx = 0;
+                last_word_end = 0;
+                if (subline > target_subline) return cur_rune;
+            }
+        }
+
+        if (subline == target_subline && vx + cw > target_vx) {
+            return cur_rune;
+        }
+
+        if (isspace((unsigned char)cp) || cp == '-' || cp == '_' ||
+            cp == '/' || cp == '\\') {
+            last_word_end = i + used;
+            last_word_rune = cur_rune + 1;
+        }
+
+        vx += cw;
+        i += used;
+        cur_rune++;
+    }
+
+    return cur_rune;
+}
+
 static void touch(editor_t *ed)
 {
     ed->dirty = true;
     ed->message[0] = '\0';
+    editor_sync_to_active(ed);
 }
 
 /* -------------------------------------------------------------------------- */
-/* Public API                                                                 */
+/* Active View & Document Synchronization                                     */
+/* -------------------------------------------------------------------------- */
+
+void editor_sync_to_active(editor_t *ed)
+{
+    if (ed->active_view != NULL && ed->active_view->buf != NULL) {
+        buffer_t *b = ed->active_view->buf;
+        b->doc         = ed->doc;
+        b->dirty       = ed->dirty;
+        b->crlf        = ed->crlf;
+        b->undo_stack  = ed->undo_stack;
+        b->redo_stack  = ed->redo_stack;
+
+        view_t *v = ed->active_view;
+        v->cx_line     = ed->cx_line;
+        v->cx_col      = ed->cx_col;
+        v->goal_col    = ed->goal_col;
+        v->top_line    = ed->top_line;
+        v->left_col    = ed->left_col;
+        v->top_subline = ed->top_subline;
+        v->sel         = ed->sel;
+    }
+}
+
+void editor_sync_from_active(editor_t *ed)
+{
+    if (ed->active_view != NULL && ed->active_view->buf != NULL) {
+        buffer_t *b = ed->active_view->buf;
+        ed->doc         = b->doc;
+        ed->path        = b->path;
+        ed->dirty       = b->dirty;
+        ed->crlf        = b->crlf;
+        ed->undo_stack  = b->undo_stack;
+        ed->redo_stack  = b->redo_stack;
+
+        view_t *v = ed->active_view;
+        ed->cx_line     = v->cx_line;
+        ed->cx_col      = v->cx_col;
+        ed->goal_col    = v->goal_col;
+        ed->top_line    = v->top_line;
+        ed->left_col    = v->left_col;
+        ed->top_subline = v->top_subline;
+        ed->sel         = v->sel;
+    }
+}
+
+void editor_set_active_view(editor_t *ed, view_t *v)
+{
+    if (v == NULL) return;
+    editor_sync_to_active(ed);
+    ed->active_view = v;
+    if (ed->tabs.active < ed->tabs.count) {
+        ed->tabs.tabs[ed->tabs.active]->active_view = v;
+    }
+    editor_sync_from_active(ed);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Public Lifecycle API                                                       */
 /* -------------------------------------------------------------------------- */
 
 void editor_init(editor_t *ed)
 {
     memset(ed, 0, sizeof(*ed));
-    ed->running = true;
+    ed->running    = true;
     ed->tty_out_fd = -1;
-    doc_insert_line(&ed->doc, 0, "", 0);
-    undo_init(ed);
+
+    config_init_defaults(&ed->config);
+    colorscheme_init(&ed->colorscheme);
+    config_load(&ed->config, &ed->keybindings);
+    colorscheme_load(&ed->colorscheme, ed->config.colorscheme);
+
+    tab_list_init(&ed->tabs);
+    buffer_t *b = buffer_new(NULL);
+    view_t *v   = view_new(b);
+    v->softwrap = ed->config.softwrap;
+    v->wordwrap = ed->config.wordwrap;
+
+    tab_list_add(&ed->tabs, v);
+    ed->active_view = v;
+    editor_sync_from_active(ed);
 }
 
 void editor_free(editor_t *ed)
 {
     if (ed == NULL) return;
-    doc_clear(&ed->doc);
-    undo_free(ed);
-    free(ed->path);
-    ed->path = NULL;
+    editor_sync_to_active(ed);
+    tab_list_free(&ed->tabs);
+    colorscheme_free(&ed->colorscheme);
+    keybinds_free(ed->keybindings);
+    ed->keybindings = NULL;
+    ed->active_view = NULL;
 }
 
 void editor_set_message(editor_t *ed, const char *fmt, ...)
@@ -400,54 +578,27 @@ void editor_set_message(editor_t *ed, const char *fmt, ...)
 
 bool editor_load(editor_t *ed, const char *path)
 {
-    size_t len = 0;
-    char *data = tam_fs_read_file(path, &len);
-
-    if (data == NULL) {
-        if (!tam_fs_file_exists(path)) {
-            free(ed->path);
-            ed->path = strdup(path);
-            ed->dirty = false;
-            return true;
-        }
-        editor_set_message(ed, "Could not read %s", path);
+    buffer_t *b = buffer_open(path);
+    if (b == NULL) {
+        editor_set_message(ed, "Could not open %s", path);
         return false;
     }
 
-    doc_clear(&ed->doc);
-    undo_free(ed);
-    undo_init(ed);
-
-    const char *text = data;
-    size_t text_len = len;
-    if (text_len >= 3 && (unsigned char)text[0] == 0xEF &&
-        (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF) {
-        text += 3;
-        text_len -= 3;
+    if (ed->active_view != NULL) {
+        buffer_unref(ed->active_view->buf);
+        ed->active_view->buf = b;
+        buffer_ref(b);
+        ed->active_view->cx_line     = 0;
+        ed->active_view->cx_col      = 0;
+        ed->active_view->goal_col    = 0;
+        ed->active_view->top_line    = 0;
+        ed->active_view->left_col    = 0;
+        ed->active_view->top_subline = 0;
+        ed->active_view->sel.active  = false;
+        editor_sync_from_active(ed);
+        return true;
     }
-
-    bool crlf = false;
-    bool ok = doc_from_text(&ed->doc, text, text_len, &crlf);
-    free(data);
-
-    if (!ok || ed->doc.count == 0) {
-        if (ed->doc.count == 0) doc_insert_line(&ed->doc, 0, "", 0);
-        editor_set_message(ed, "Could not load %s", path);
-        return false;
-    }
-
-    free(ed->path);
-    ed->path = strdup(path);
-    ed->crlf = crlf;
-    ed->dirty = false;
-    ed->cx_line = 0;
-    ed->cx_col = 0;
-    ed->goal_col = 0;
-    ed->top_line = 0;
-    ed->left_col = 0;
-    ed->sel.active = false;
-    ed->message[0] = '\0';
-    return true;
+    return false;
 }
 
 bool editor_save_to(editor_t *ed, const char *path)
@@ -457,44 +608,180 @@ bool editor_save_to(editor_t *ed, const char *path)
         return false;
     }
 
-    tam_str_t text = tam_str_new("");
-    if (text == NULL) {
-        editor_set_message(ed, "Out of memory");
-        return false;
+    editor_sync_to_active(ed);
+    if (ed->active_view && ed->active_view->buf) {
+        bool ok = buffer_save_to(ed->active_view->buf, path);
+        if (ok) {
+            editor_sync_from_active(ed);
+            editor_set_message(ed, "Saved to %s", path);
+            return true;
+        }
     }
-
-    if (!doc_join_text(&ed->doc, ed->crlf, &text)) {
-        tam_str_free(text);
-        editor_set_message(ed, "Out of memory");
-        return false;
-    }
-
-    mode_t mode = 0644;
-    struct stat st;
-    if (stat(path, &st) == 0) mode = st.st_mode & 07777;
-
-    bool ok = tam_fs_write_atomic(path, text, tam_str_len(text), mode);
-    size_t written = tam_str_len(text);
-    tam_str_free(text);
-
-    if (!ok) {
-        editor_set_message(ed, "Could not save %s", path);
-        return false;
-    }
-
-    if (ed->path == NULL || strcmp(ed->path, path) != 0) {
-        free(ed->path);
-        ed->path = strdup(path);
-    }
-    ed->dirty = false;
-    editor_set_message(ed, "Saved %zu bytes to %s", written, path);
-    return true;
+    editor_set_message(ed, "Could not save %s", path);
+    return false;
 }
 
 bool editor_save(editor_t *ed)
 {
-    return editor_save_to(ed, ed->path);
+    editor_sync_to_active(ed);
+    if (ed->active_view && ed->active_view->buf) {
+        const char *p = ed->active_view->buf->path;
+        if (p == NULL || *p == '\0') {
+            editor_set_message(ed, "No file name");
+            return false;
+        }
+        bool ok = buffer_save(ed->active_view->buf);
+        if (ok) {
+            editor_sync_from_active(ed);
+            editor_set_message(ed, "Saved %s", p);
+            return true;
+        }
+    }
+    editor_set_message(ed, "Could not save");
+    return false;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Split and Tab Actions                                                      */
+/* -------------------------------------------------------------------------- */
+
+bool editor_vsplit(editor_t *ed, const char *path)
+{
+    if (ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    pane_node_t *cur_node = pane_find_view(cur_tab->root, ed->active_view);
+    if (cur_node == NULL) return false;
+
+    buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
+                                                  : ed->active_view->buf;
+    if (b == NULL) return false;
+
+    view_t *nv = view_new(b);
+    if (nv == NULL) return false;
+    nv->softwrap = ed->config.softwrap;
+    nv->wordwrap = ed->config.wordwrap;
+
+    pane_node_t *new_node = pane_split(cur_node, PANE_SPLIT_V, nv);
+    if (new_node != NULL) {
+        editor_set_active_view(ed, nv);
+        return true;
+    }
+    view_free(nv);
+    return false;
+}
+
+bool editor_hsplit(editor_t *ed, const char *path)
+{
+    if (ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    pane_node_t *cur_node = pane_find_view(cur_tab->root, ed->active_view);
+    if (cur_node == NULL) return false;
+
+    buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
+                                                  : ed->active_view->buf;
+    if (b == NULL) return false;
+
+    view_t *nv = view_new(b);
+    if (nv == NULL) return false;
+    nv->softwrap = ed->config.softwrap;
+    nv->wordwrap = ed->config.wordwrap;
+
+    pane_node_t *new_node = pane_split(cur_node, PANE_SPLIT_H, nv);
+    if (new_node != NULL) {
+        editor_set_active_view(ed, nv);
+        return true;
+    }
+    view_free(nv);
+    return false;
+}
+
+bool editor_unsplit(editor_t *ed)
+{
+    if (ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    pane_node_t *cur_node = pane_find_view(cur_tab->root, ed->active_view);
+    if (cur_node == NULL || cur_node == cur_tab->root) return false;
+
+    view_t *next_v = pane_next_view(cur_tab->root, ed->active_view);
+    pane_close(cur_tab->root, cur_node, &cur_tab->root);
+    editor_set_active_view(ed, next_v);
+    return true;
+}
+
+bool editor_next_split(editor_t *ed)
+{
+    if (ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    view_t *nv = pane_next_view(cur_tab->root, ed->active_view);
+    if (nv != NULL && nv != ed->active_view) {
+        editor_set_active_view(ed, nv);
+        return true;
+    }
+    return false;
+}
+
+bool editor_prev_split(editor_t *ed)
+{
+    if (ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    view_t *nv = pane_prev_view(cur_tab->root, ed->active_view);
+    if (nv != NULL && nv != ed->active_view) {
+        editor_set_active_view(ed, nv);
+        return true;
+    }
+    return false;
+}
+
+bool editor_add_tab(editor_t *ed, const char *path)
+{
+    buffer_t *b = (path != NULL && *path != '\0') ? buffer_open(path)
+                                                  : buffer_new(NULL);
+    if (b == NULL) return false;
+
+    view_t *v = view_new(b);
+    if (v == NULL) return false;
+    v->softwrap = ed->config.softwrap;
+    v->wordwrap = ed->config.wordwrap;
+
+    tab_t *t = tab_list_add(&ed->tabs, v);
+    if (t != NULL) {
+        editor_set_active_view(ed, v);
+        return true;
+    }
+    view_free(v);
+    return false;
+}
+
+bool editor_close_tab(editor_t *ed)
+{
+    if (ed->tabs.count <= 1) return false;
+    tab_list_close(&ed->tabs, ed->tabs.active);
+    tab_t *cur = ed->tabs.tabs[ed->tabs.active];
+    editor_set_active_view(ed, cur->active_view);
+    return true;
+}
+
+bool editor_next_tab(editor_t *ed)
+{
+    if (ed->tabs.count <= 1) return false;
+    tab_list_next(&ed->tabs);
+    tab_t *cur = ed->tabs.tabs[ed->tabs.active];
+    editor_set_active_view(ed, cur->active_view);
+    return true;
+}
+
+bool editor_prev_tab(editor_t *ed)
+{
+    if (ed->tabs.count <= 1) return false;
+    tab_list_prev(&ed->tabs);
+    tab_t *cur = ed->tabs.tabs[ed->tabs.active];
+    editor_set_active_view(ed, cur->active_view);
+    return true;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Text Editing API                                                           */
+/* -------------------------------------------------------------------------- */
 
 void editor_insert_codepoint(editor_t *ed, uint32_t cp)
 {
@@ -526,7 +813,6 @@ void editor_insert_text(editor_t *ed, const char *text, size_t len)
 
     editor_raw_insert(ed, ed->cx_line, ed->cx_col, text, len);
 
-    /* Update cursor after inserted text */
     const char *last_nl = memrchr(text, '\n', len);
     if (last_nl == NULL) {
         ed->cx_col += edit_line_runes(text, len);
@@ -562,7 +848,15 @@ void editor_insert_newline(editor_t *ed)
 
 void editor_insert_tab(editor_t *ed)
 {
-    editor_insert_codepoint(ed, '\t');
+    if (ed->config.tabstospaces && ed->config.tabsize > 0) {
+        int spaces = ed->config.tabsize;
+        char sp[16];
+        if (spaces > 16) spaces = 16;
+        memset(sp, ' ', spaces);
+        editor_insert_text(ed, sp, spaces);
+    } else {
+        editor_insert_codepoint(ed, '\t');
+    }
 }
 
 void editor_backspace(editor_t *ed)
@@ -641,12 +935,16 @@ void editor_delete(editor_t *ed)
 
 bool editor_undo(editor_t *ed)
 {
-    return undo_perform(ed);
+    bool ok = undo_perform(ed);
+    if (ok) touch(ed);
+    return ok;
 }
 
 bool editor_redo(editor_t *ed)
 {
-    return redo_perform(ed);
+    bool ok = redo_perform(ed);
+    if (ok) touch(ed);
+    return ok;
 }
 
 void editor_move(editor_t *ed, long dx, long dy)

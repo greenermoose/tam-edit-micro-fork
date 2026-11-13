@@ -4,14 +4,18 @@
 #include "editor.h"
 #include <tam_tty.h>
 
-#define ATTR_NONE    0
-#define ATTR_REVERSE (1u << 0)
-#define ATTR_BOLD    (1u << 1)
+#define ATTR_NONE      0
+#define ATTR_REVERSE   (1u << 0)
+#define ATTR_BOLD      (1u << 1)
+#define ATTR_UNDERLINE (1u << 2)
+#define ATTR_ITALIC    (1u << 3)
 
 typedef struct {
     uint32_t codepoint;
-    uint16_t attr;
-    uint8_t  width; /* 1, 2, or 0 (second half of wide char) */
+    uint32_t fg;     /* RGB, COLOR_ANSI, or COLOR_DEFAULT */
+    uint32_t bg;     /* RGB, COLOR_ANSI, or COLOR_DEFAULT */
+    uint16_t attr;   /* Bitmask of ATTR_* */
+    uint8_t  width;  /* 1, 2, or 0 (second half of wide char) */
 } cell_t;
 
 typedef struct {

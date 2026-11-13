@@ -1,7 +1,9 @@
 import os
 import pty
 import select
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 
@@ -15,6 +17,62 @@ def drain_master(fd, stop_event):
                     break
             except OSError:
                 break
+
+def test_cli_version():
+    proc = subprocess.run(["./build/tam-edit", "--version"], stdout=subprocess.PIPE, text=True)
+    assert proc.returncode == 0, f"--version failed with code {proc.returncode}"
+    assert "tam-edit 0.2.0" in proc.stdout, f"Unexpected version output: {proc.stdout}"
+    print("[PASS] CLI --version output verified")
+
+def test_cli_config_check():
+    tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=".ini")
+    try:
+        tmp.write(
+            "[settings]\n"
+            "softwrap = true\n"
+            "wordwrap = true\n"
+            "tabsize = 4\n"
+            "colorscheme = default\n"
+            "\n"
+            "[bindings]\n"
+            "Alt-w = togglelocal softwrap\n"
+            "Ctrl-t = AddTab\n"
+        )
+        tmp.close()
+
+        proc = subprocess.run(["./build/tam-edit", "--check-config", tmp.name],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        assert proc.returncode == 0, f"--check-config failed:\n{proc.stdout}\n{proc.stderr}"
+        assert "Configuration check passed successfully" in proc.stdout
+        print("[PASS] CLI --check-config validation verified")
+    finally:
+        if os.path.exists(tmp.name):
+            os.remove(tmp.name)
+
+def test_cli_micro_import():
+    tmp_home = tempfile.mkdtemp(prefix="tam-test-home-")
+    try:
+        micro_dir = os.path.join(tmp_home, "micro_src")
+        os.makedirs(micro_dir, exist_ok=True)
+        with open(os.path.join(micro_dir, "settings.json"), "w") as f:
+            f.write("{\n    // comment\n    \"softwrap\": true,\n    \"tabsize\": 2,\n}\n")
+        with open(os.path.join(micro_dir, "bindings.json"), "w") as f:
+            f.write("{\n    \"Alt-w\": \"togglelocal softwrap\",\n    \"Ctrl-t\": \"AddTab\",\n}\n")
+
+        env = dict(os.environ, HOME=tmp_home, XDG_CONFIG_HOME=os.path.join(tmp_home, ".config"))
+        proc = subprocess.run(["./build/tam-edit", "--import-micro-config", micro_dir],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        assert proc.returncode == 0, f"--import-micro-config failed:\n{proc.stdout}\n{proc.stderr}"
+
+        ini_path = os.path.join(tmp_home, ".config", "tam-edit", "settings.ini")
+        assert os.path.exists(ini_path), f"settings.ini not created at {ini_path}"
+
+        chk = subprocess.run(["./build/tam-edit", "--check-config", ini_path],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        assert chk.returncode == 0, f"--check-config failed on imported INI:\n{chk.stdout}"
+        print("[PASS] CLI --import-micro-config JSON5 migration verified")
+    finally:
+        shutil.rmtree(tmp_home, ignore_errors=True)
 
 def run_pty_test():
     test_path = "/tmp/tam-edit-pty-smoke.txt"
@@ -83,6 +141,93 @@ def run_pty_test():
 
     print("[PASS] PTY dirty-quit confirmation and clean exit verified")
 
-if __name__ == "__main__":
-    run_pty_test()
+def test_pty_splits_and_tabs():
+    file1 = "/tmp/tam-m2-tab1.txt"
+    file2 = "/tmp/tam-m2-tab2.txt"
+    for f in (file1, file2):
+        if os.path.exists(f):
+            os.remove(f)
 
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        ["./build/tam-edit", file1, file2],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        close_fds=True,
+    )
+    os.close(slave)
+
+    stop_drain = threading.Event()
+    drain_thread = threading.Thread(target=drain_master, args=(master, stop_drain), daemon=True)
+    drain_thread.start()
+
+    time.sleep(0.4)
+
+    # 1. Tab 1 is active: type "AlphaTab" and save
+    os.write(master, b"AlphaTab")
+    time.sleep(0.2)
+    os.write(master, b"\x13")  # Ctrl-S
+    time.sleep(0.3)
+
+    # 2. Switch to Tab 2 via command prompt: Ctrl-E (:), "tabnext\r"
+    os.write(master, b"\x05")  # Ctrl-E
+    time.sleep(0.2)
+    os.write(master, b"tabnext\r")
+    time.sleep(0.3)
+
+    # 3. Tab 2: type "BetaTab" and save
+    os.write(master, b"BetaTab")
+    time.sleep(0.2)
+    os.write(master, b"\x13")  # Ctrl-S
+    time.sleep(0.3)
+
+    # 4. In Tab 2, split vertically via Ctrl-E, "vsplit\r"
+    os.write(master, b"\x05")
+    time.sleep(0.2)
+    os.write(master, b"vsplit\r")
+    time.sleep(0.3)
+
+    # 5. Type in new split: "-SplitText" and save
+    os.write(master, b"-SplitText")
+    time.sleep(0.2)
+    os.write(master, b"\x13")
+    time.sleep(0.3)
+
+    # 6. Unsplit via Ctrl-E, "unsplit\r"
+    os.write(master, b"\x05")
+    time.sleep(0.2)
+    os.write(master, b"unsplit\r")
+    time.sleep(0.3)
+
+    # 7. Quit with Ctrl-Q (\x11)
+    os.write(master, b"\x11")
+    time.sleep(0.3)
+
+    proc.wait(timeout=2)
+    stop_drain.set()
+    drain_thread.join(timeout=1)
+    os.close(master)
+
+    assert os.path.exists(file1), f"{file1} does not exist"
+    with open(file1, "r", encoding="utf-8") as f:
+        c1 = f.read()
+    assert "AlphaTab" in c1, f"Unexpected content in {file1}: {c1}"
+
+    assert os.path.exists(file2), f"{file2} does not exist"
+    with open(file2, "r", encoding="utf-8") as f:
+        c2 = f.read()
+    assert "BetaTab" in c2 and "-SplitText" in c2, f"Unexpected content in {file2}: {c2}"
+
+    for f in (file1, file2):
+        if os.path.exists(f):
+            os.remove(f)
+
+    print("[PASS] PTY multi-tab file loading, split tree, and shared editing verified")
+
+if __name__ == "__main__":
+    test_cli_version()
+    test_cli_config_check()
+    test_cli_micro_import()
+    run_pty_test()
+    test_pty_splits_and_tabs()

@@ -7,7 +7,7 @@ override CFLAGS += -std=c11 -g -Isrc -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE \
 LDFLAGS ?=
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
-VERSION := 0.1.0
+VERSION := 0.2.0
 PREFIX ?= $(HOME)/.local/dev
 
 # Look for libtam in $(PREFIX)/lib/pkgconfig if not already in system search path
@@ -22,10 +22,10 @@ BIN = $(BUILD)/tam-edit
 TEST_BIN = $(BUILD)/test_editor
 TEST_ASAN_BIN = $(BUILD)/test_asan
 
-CORE_SRCS = src/editor.c src/cursor.c src/undo.c src/actions.c src/prompt.c src/clipboard.c src/render.c
+CORE_SRCS = src/editor.c src/cursor.c src/undo.c src/actions.c src/prompt.c src/clipboard.c src/render.c src/buffer.c src/pane.c src/config.c src/colorscheme.c
 SRCS = src/main.c $(CORE_SRCS)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
-TEST_SRCS = $(CORE_SRCS) tests/test_editor.c tests/test_milestone1.c
+TEST_SRCS = $(CORE_SRCS) tests/test_editor.c tests/test_milestone1.c tests/test_milestone2.c
 
 .PHONY: all test test-asan test-pty clean install uninstall check-deps
 

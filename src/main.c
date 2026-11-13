@@ -1,4 +1,5 @@
 #include "actions.h"
+#include "buffer.h"
 #include "clipboard.h"
 #include "cursor.h"
 #include "editor.h"
@@ -17,7 +18,7 @@
 #include <unistd.h>
 
 #ifndef TAM_EDIT_VERSION
-#define TAM_EDIT_VERSION "0.1.0"
+#define TAM_EDIT_VERSION "0.2.0"
 #endif
 
 static volatile sig_atomic_t g_resized;
@@ -63,7 +64,7 @@ static void install_signals(void)
 static void usage(FILE *out)
 {
     fprintf(out,
-        "Usage: tam-edit [OPTIONS] [FILE]\n"
+        "Usage: tam-edit [OPTIONS] [FILE...]\n"
         "\n"
         "A small, fast terminal text editor built on libtam.\n"
         "\n"
@@ -80,21 +81,28 @@ static void usage(FILE *out)
         "  Ctrl-F, Ctrl-N, Ctrl-P                    find / next / previous\n"
         "  Ctrl-E                                    command prompt\n"
         "  Ctrl-L                                    go to line\n"
+        "  Ctrl-T                                    add tab\n"
+        "  Alt-, / Alt-.                             previous / next tab\n"
+        "  Ctrl-W                                    next split\n"
+        "  Alt-W                                     toggle softwrap\n"
+        "  Ctrl-R                                    toggle line numbers\n"
         "\n"
         "Options:\n"
-        "  -h, --help       show this help\n"
-        "  -v, --version    show the version\n");
+        "  -h, --help                  show this help\n"
+        "  -v, --version               show the version\n"
+        "  --check-config              validate ~/.config/tam-edit/settings.ini\n"
+        "  --import-micro-config [DIR] import settings & bindings from micro\n");
 }
 
 /* Parse SGR mouse escape sequences: \x1b[<btn;col;row[M|m] */
 static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
-                             size_t *consumed, int text_rows)
+                             size_t *consumed, int tty_rows)
 {
+    (void)tty_rows;
     if (len < 6 || buf[0] != '\x1b' || buf[1] != '[' || buf[2] != '<') {
         return false;
     }
 
-    /* Find terminating 'M' or 'm' */
     size_t end = 3;
     while (end < len && buf[end] != 'M' && buf[end] != 'm') end++;
     if (end >= len) return false;
@@ -107,33 +115,84 @@ static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
         return true;
     }
 
+    /* Check click on Tab Bar (row 1 in 1-based coordinates) */
+    bool show_tabbar = (ed->config.tabbar == TABBAR_ON) ||
+                       (ed->config.tabbar == TABBAR_AUTO && ed->tabs.count > 1);
+    if (show_tabbar && y == 1 && end_char == 'M' && btn == 0) {
+        int col = 1;
+        for (size_t i = 0; i < ed->tabs.count; i++) {
+            tab_t *t = ed->tabs.tabs[i];
+            char title[128];
+            tab_get_title(t, title, sizeof(title));
+            int tab_w = (int)strlen(title) + (tab_is_dirty(t) ? 6 : 4);
+            if (x >= col && x < col + tab_w) {
+                ed->tabs.active = i;
+                editor_set_active_view(ed, t->active_view);
+                return true;
+            }
+            col += tab_w + 1;
+        }
+        return true;
+    }
+
+    /* Locate clicked split pane */
+    if (ed->tabs.count == 0 || ed->tabs.active >= ed->tabs.count) return true;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    view_t *hit = pane_hit_test(cur_tab->root, x - 1, y - 1);
+    if (hit != NULL) {
+        if (hit != ed->active_view) {
+            editor_set_active_view(ed, hit);
+        }
+    }
+
     if (btn == 64) {
-        /* Wheel up: scroll up 3 lines */
+        /* Wheel up */
         cursor_move(ed, 0, -3, false);
         return true;
     }
     if (btn == 65) {
-        /* Wheel down: scroll down 3 lines */
+        /* Wheel down */
         cursor_move(ed, 0, 3, false);
         return true;
     }
 
-    int screen_r = y - 1;
-    int screen_c = x - 1;
-    if (screen_r < 0) screen_r = 0;
-    if (screen_r >= text_rows) screen_r = text_rows - 1;
+    if (hit == NULL || hit->buf == NULL) return true;
 
-    size_t doc_l = ed->top_line + (size_t)screen_r;
-    if (doc_l >= ed->doc.count) {
-        doc_l = ed->doc.count > 0 ? ed->doc.count - 1 : 0;
+    int gw = 0;
+    if (ed->config.ruler) {
+        gw = 4;
+        if (hit->buf->doc.count >= 1000) gw = 5;
+        if (hit->buf->doc.count >= 10000) gw = 6;
+        if (gw >= hit->w / 2) gw = 0;
+    }
+
+    int rel_x = x - 1 - hit->x - gw;
+    int rel_y = y - 1 - hit->y;
+    int max_text_rows = hit->h > 1 ? hit->h - 1 : 1;
+    if (rel_y < 0) rel_y = 0;
+    if (rel_y >= max_text_rows) rel_y = max_text_rows - 1;
+    if (rel_x < 0) rel_x = 0;
+
+    size_t doc_l = hit->top_line + (size_t)rel_y;
+    if (doc_l >= hit->buf->doc.count) {
+        doc_l = hit->buf->doc.count > 0 ? hit->buf->doc.count - 1 : 0;
     }
 
     size_t rune_col = 0;
-    if (doc_l < ed->doc.count) {
-        int target_visual = screen_c + (int)ed->left_col;
-        rune_col = edit_visual_to_rune(ed->doc.lines[doc_l],
-                                       ed->doc.lens[doc_l],
-                                       target_visual);
+    if (doc_l < hit->buf->doc.count) {
+        if (!hit->softwrap) {
+            int target_visual = rel_x + (int)hit->left_col;
+            rune_col = edit_visual_to_rune(hit->buf->doc.lines[doc_l],
+                                           hit->buf->doc.lens[doc_l],
+                                           target_visual);
+        } else {
+            int tabsize = ed->config.tabsize > 0 ? ed->config.tabsize : 4;
+            int text_cols = hit->w > gw ? hit->w - gw : 80;
+            rune_col = edit_softwrap_vloc_to_rune(hit->buf->doc.lines[doc_l],
+                                                  hit->buf->doc.lens[doc_l],
+                                                  0, rel_x, text_cols, tabsize,
+                                                  hit->wordwrap);
+        }
     }
 
     if (end_char == 'M') {
@@ -144,6 +203,7 @@ static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
             ed->goal_col = rune_col;
             cursor_clamp(ed);
             ed->sel.active = false;
+            editor_sync_to_active(ed);
             return true;
         } else if (btn == 32) {
             /* Left drag */
@@ -156,6 +216,7 @@ static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
             ed->goal_col = rune_col;
             cursor_clamp(ed);
             ed->sel.cursor = (loc_t){ed->cx_line, ed->cx_col};
+            editor_sync_to_active(ed);
             return true;
         }
     }
@@ -165,7 +226,8 @@ static bool handle_mouse_sgr(editor_t *ed, const unsigned char *buf, size_t len,
 
 int main(int argc, char **argv)
 {
-    const char *path = NULL;
+    const char *files[64];
+    size_t file_count = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -176,16 +238,24 @@ int main(int argc, char **argv)
             usage(stdout);
             return 0;
         }
+        if (strcmp(argv[i], "--check-config") == 0) {
+            const char *cfg_path = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : NULL;
+            bool ok = config_check(cfg_path, stdout);
+            return ok ? 0 : 1;
+        }
+        if (strcmp(argv[i], "--import-micro-config") == 0) {
+            const char *m_dir = (i + 1 < argc && argv[i + 1][0] != '-') ? argv[++i] : NULL;
+            bool ok = config_import_micro(m_dir, NULL, stdout);
+            return ok ? 0 : 1;
+        }
         if (argv[i][0] == '-') {
             fprintf(stderr, "tam-edit: unknown option '%s'\n", argv[i]);
             usage(stderr);
             return 2;
         }
-        if (path != NULL) {
-            fprintf(stderr, "tam-edit: only one file may be opened\n");
-            return 2;
+        if (file_count < 64) {
+            files[file_count++] = argv[i];
         }
-        path = argv[i];
     }
 
     setlocale(LC_CTYPE, "");
@@ -195,14 +265,17 @@ int main(int argc, char **argv)
     actions_init();
     clipboard_init();
 
-    if (path != NULL) {
-        bool existed = tam_fs_file_exists(path);
-        if (!editor_load(&ed, path)) {
+    if (file_count > 0) {
+        if (!editor_load(&ed, files[0])) {
             fprintf(stderr, "tam-edit: %s\n", ed.message);
             editor_free(&ed);
             return 1;
         }
-        if (!existed) editor_set_message(&ed, "New file");
+        for (size_t f = 1; f < file_count; f++) {
+            editor_add_tab(&ed, files[f]);
+        }
+        ed.tabs.active = 0;
+        editor_set_active_view(&ed, ed.tabs.tabs[0]->active_view);
     }
 
     tam_tty_t tty = {0};
@@ -258,7 +331,7 @@ int main(int argc, char **argv)
 
         if (g_resized) {
             g_resized = 0;
-            tam_tty_size(&tty, NULL, NULL);
+            tam_tty_size(&tty, &tty.rows, &tty.cols);
             ren.force_redraw = true;
             need_draw = true;
         }
@@ -268,29 +341,15 @@ int main(int argc, char **argv)
             need_draw = false;
         }
 
-        int timeout = tam_key_pending(&keys) > 0 ? 20 : -1;
-        int n = tam_tty_read(&tty, buf, sizeof(buf), timeout);
+        ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+        if (n <= 0) continue;
 
-        if (n < 0) break;
-        if (n == 0) {
-            tam_key_event_t ev;
-            if (tam_key_timeout(&keys, &ev)) {
-                if (ed.prompt.active) {
-                    prompt_handle_key(&ed, &ev);
-                } else {
-                    actions_handle_key(&ed, &ev, render_text_rows(&tty));
-                }
-                need_draw = true;
-            }
-            continue;
-        }
-
-        /* Bracketed paste check */
-        size_t b_idx = 0;
         size_t b_len = (size_t)n;
+        size_t b_idx = 0;
 
         while (b_idx < b_len) {
-            if (!in_paste && b_idx + 6 <= b_len &&
+            /* Bracketed paste check */
+            if (!in_paste && b_len - b_idx >= 6 &&
                 memcmp(buf + b_idx, "\x1b[200~", 6) == 0) {
                 in_paste = true;
                 b_idx += 6;
@@ -324,8 +383,7 @@ int main(int argc, char **argv)
 
             /* SGR Mouse check */
             size_t consumed = 0;
-            if (handle_mouse_sgr(&ed, buf + b_idx, b_len - b_idx, &consumed,
-                                 render_text_rows(&tty))) {
+            if (handle_mouse_sgr(&ed, buf + b_idx, b_len - b_idx, &consumed, tty.rows)) {
                 b_idx += consumed;
                 need_draw = true;
                 continue;

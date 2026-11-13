@@ -7,10 +7,19 @@
 
 #define EDIT_TABSTOP 8
 
+#ifndef TAM_EDIT_SELECTION_DEFINED
+#define TAM_EDIT_SELECTION_DEFINED
 typedef struct {
     size_t line; /* 0-based line index */
     size_t col;  /* 0-based rune (code point) column */
 } loc_t;
+
+typedef struct {
+    loc_t anchor;
+    loc_t cursor;
+    bool  active;
+} selection_t;
+#endif
 
 typedef struct {
     char  **lines;
@@ -18,12 +27,6 @@ typedef struct {
     size_t  count;
     size_t  cap;
 } edit_doc_t;
-
-typedef struct {
-    loc_t anchor;
-    loc_t cursor;
-    bool  active;
-} selection_t;
 
 typedef enum {
     DELTA_INSERT = 1,
@@ -78,6 +81,15 @@ typedef struct {
     bool   has_match;
 } search_state_t;
 
+/* Forward declarations for Milestone 2 modules */
+struct buffer;
+struct view;
+struct custom_keybind;
+
+#include "colorscheme.h"
+#include "config.h"
+#include "pane.h"
+
 typedef struct {
     edit_doc_t     doc;
     size_t         cx_line;
@@ -85,6 +97,7 @@ typedef struct {
     size_t         goal_col;
     size_t         top_line;
     size_t         left_col;
+    int            top_subline;
     selection_t    sel;
     undo_stack_t   undo_stack;
     undo_stack_t   redo_stack;
@@ -97,6 +110,13 @@ typedef struct {
     bool           running;
     int            tty_out_fd;
     char           message[256];
+
+    /* Milestone 2: Views, Split Tree, Tabs, Config & Colorscheme */
+    config_t          config;
+    colorscheme_t     colorscheme;
+    custom_keybind_t *keybindings;
+    tab_list_t        tabs;
+    view_t           *active_view;
 } editor_t;
 
 /* Editor lifecycle and document operations */
@@ -107,6 +127,20 @@ bool editor_save(editor_t *ed);
 bool editor_save_to(editor_t *ed, const char *path);
 
 void editor_set_message(editor_t *ed, const char *fmt, ...);
+void editor_sync_to_active(editor_t *ed);
+void editor_sync_from_active(editor_t *ed);
+void editor_set_active_view(editor_t *ed, view_t *v);
+
+/* Milestone 2 View, Split and Tab actions */
+bool editor_vsplit(editor_t *ed, const char *path);
+bool editor_hsplit(editor_t *ed, const char *path);
+bool editor_unsplit(editor_t *ed);
+bool editor_next_split(editor_t *ed);
+bool editor_prev_split(editor_t *ed);
+bool editor_add_tab(editor_t *ed, const char *path);
+bool editor_close_tab(editor_t *ed);
+bool editor_next_tab(editor_t *ed);
+bool editor_prev_tab(editor_t *ed);
 
 /* Low-level document operations */
 void editor_raw_insert(editor_t *ed, size_t line, size_t col, const char *text, size_t len);
@@ -136,5 +170,15 @@ size_t edit_line_runes(const char *line, size_t len);
 size_t edit_rune_to_byte(const char *line, size_t len, size_t col);
 int    edit_visual_col(const char *line, size_t len, size_t col);
 size_t edit_visual_to_rune(const char *line, size_t len, int cells);
+
+/* Softwrap helpers */
+size_t edit_softwrap_line_sublines(const char *line, size_t len, int width,
+                                   int tabsize, bool wordwrap);
+void   edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
+                                 int width, int tabsize, bool wordwrap,
+                                 int *subline_out, int *vx_out);
+size_t edit_softwrap_vloc_to_rune(const char *line, size_t len, int subline,
+                                  int target_vx, int width, int tabsize,
+                                  bool wordwrap);
 
 #endif

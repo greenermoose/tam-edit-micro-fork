@@ -85,12 +85,66 @@ void cursor_move(editor_t *ed, long dx, long dy, bool select)
     }
 
     if (dy != 0) {
-        long line = (long)ed->cx_line + dy;
-        if (line < 0) line = 0;
-        if (line >= (long)ed->doc.count) line = (long)ed->doc.count - 1;
-        ed->cx_line = (size_t)line;
-        ed->cx_col = ed->goal_col;
-        cursor_clamp(ed);
+        if (ed->active_view != NULL && ed->active_view->softwrap && ed->doc.count > 0) {
+            int width = ed->active_view->w > 1 ? ed->active_view->w : 80;
+            int tabsize = ed->config.tabsize > 0 ? ed->config.tabsize : 4;
+            bool wordwrap = ed->active_view->wordwrap;
+
+            size_t cur_line_idx = ed->cx_line;
+            const char *cur_line = ed->doc.lines[cur_line_idx];
+            size_t cur_len = ed->doc.lens[cur_line_idx];
+            int subline = 0, cur_vx = 0;
+            edit_softwrap_loc_to_vloc(cur_line, cur_len, ed->cx_col, width, tabsize, wordwrap, &subline, &cur_vx);
+            int goal_vx = (int)ed->goal_col;
+            size_t total_sub = edit_softwrap_line_sublines(cur_line, cur_len, width, tabsize, wordwrap);
+
+            int remaining = (dy > 0) ? dy : -dy;
+            int dir = (dy > 0) ? 1 : -1;
+
+            while (remaining > 0) {
+                if (dir > 0) {
+                    subline++;
+                    if ((size_t)subline >= total_sub) {
+                        if (cur_line_idx + 1 < ed->doc.count) {
+                            cur_line_idx++;
+                            subline = 0;
+                            cur_line = ed->doc.lines[cur_line_idx];
+                            cur_len = ed->doc.lens[cur_line_idx];
+                            total_sub = edit_softwrap_line_sublines(cur_line, cur_len, width, tabsize, wordwrap);
+                        } else {
+                            subline = (int)total_sub - 1;
+                            break;
+                        }
+                    }
+                } else {
+                    subline--;
+                    if (subline < 0) {
+                        if (cur_line_idx > 0) {
+                            cur_line_idx--;
+                            cur_line = ed->doc.lines[cur_line_idx];
+                            cur_len = ed->doc.lens[cur_line_idx];
+                            total_sub = edit_softwrap_line_sublines(cur_line, cur_len, width, tabsize, wordwrap);
+                            subline = (total_sub > 0) ? (int)total_sub - 1 : 0;
+                        } else {
+                            subline = 0;
+                            break;
+                        }
+                    }
+                }
+                remaining--;
+            }
+
+            ed->cx_line = cur_line_idx;
+            ed->cx_col = edit_softwrap_vloc_to_rune(cur_line, cur_len, subline, goal_vx, width, tabsize, wordwrap);
+            cursor_clamp(ed);
+        } else {
+            long line = (long)ed->cx_line + dy;
+            if (line < 0) line = 0;
+            if (line >= (long)ed->doc.count) line = (long)ed->doc.count - 1;
+            ed->cx_line = (size_t)line;
+            ed->cx_col = ed->goal_col;
+            cursor_clamp(ed);
+        }
     }
 
     if (dx != 0) {

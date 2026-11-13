@@ -282,6 +282,7 @@ static void test_save_without_path(void)
 }
 
 void test_milestone1_run(void);
+int  run_milestone2_tests(void);
 
 int main(void)
 {
@@ -301,5 +302,6 @@ int main(void)
     printf("editor tests passed\n\n");
 
     test_milestone1_run();
+    run_milestone2_tests();
     return 0;
 }

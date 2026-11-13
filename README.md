@@ -21,27 +21,28 @@ and documentation to the features being ported.
 | Branch | Tree | Build | Status |
 | --- | --- | --- | --- |
 | `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, still usable |
-| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.1.0: daily-usable editor |
+| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.2.0: views and configuration |
 
 New work happens on `c11`. [ROADMAP.md](ROADMAP.md) holds the phase plan and
 the milestone definitions. The Go tree stays on `master`, and on `c11` until
 the C version reaches the 1.0.0 parity gate.
 
-Version 0.1.0 (Milestone 1) is a daily-usable editor. `make` builds
-`build/tam-edit`, which links only libc and libtam 0.7.0. It features a
-double-buffered cell-grid renderer with damage tracking, micro's grouped
-undo and redo, visual selections, word motions and deletions, default micro
-keybindings, interactive command/search/goto prompts, clipboard integration
-(OSC 52 and system tools), and mouse support.
+Version 0.2.0 (Milestone 2) delivers views and configuration. `make` builds
+`build/tam-edit`, which links only libc and libtam 0.7.0. In addition to
+Milestone 1 features, it introduces a decoupled buffer/view architecture with
+reference counting, multi-split panes (`vsplit`/`hsplit`), tab management (`Ctrl-T`,
+`Alt-,`/`Alt-.`), softwrap with sub-line cursor movement, micro `color-link`
+colorscheme parsing with truecolor rendering, native INI configuration via
+`tam_ini` (`~/.config/tam-edit/settings.ini`), `--check-config` validation, and a
+lenient JSON5 micro configuration importer (`--import-micro-config`).
 
 ## Versioning
 
 tam-edit follows semantic versioning, and while it is below 1.0.0 the minor
-number names a milestone: 0.1.0 is the first daily-usable editor, and 1.0.0 is
-reserved for the parity gate with micro. Until the first milestone the version
-stays in 0.0.x, where it is now. `VERSION` in the Makefile is the only source;
-`tam-edit --version` prints it next to the libtam version. The milestone table
-and the bump rules are in
+number names a milestone: 0.1.0 is the first daily-usable editor, 0.2.0 is
+views and configuration, and 1.0.0 is reserved for the parity gate with micro.
+`VERSION` in the Makefile is the only source; `tam-edit --version` prints it
+next to the libtam version. The milestone table and the bump rules are in
 [ROADMAP.md](ROADMAP.md#milestones-and-versions).
 
 ## What the fork changes from micro

@@ -89,7 +89,6 @@ static void act_copy(editor_t *ed)
             editor_set_message(ed, "Copied selection");
         }
     } else {
-        /* Copy current line */
         if (ed->cx_line < ed->doc.count) {
             tam_str_t s = tam_str_new_len(ed->doc.lines[ed->cx_line],
                                           ed->doc.lens[ed->cx_line]);
@@ -110,7 +109,6 @@ static void act_cut(editor_t *ed)
         selection_delete(ed);
         editor_set_message(ed, "Cut selection");
     } else {
-        /* Cut current line */
         if (ed->cx_line < ed->doc.count) {
             act_copy(ed);
             size_t runes = edit_line_runes(ed->doc.lines[ed->cx_line],
@@ -190,6 +188,42 @@ static void act_find(editor_t *ed)         { prompt_open_find(ed); }
 static void act_find_next(editor_t *ed)    { search_find_next(ed); }
 static void act_find_prev(editor_t *ed)    { search_find_prev(ed); }
 
+/* Milestone 2 Action implementations */
+static void act_vsplit(editor_t *ed)          { editor_vsplit(ed, NULL); }
+static void act_hsplit(editor_t *ed)          { editor_hsplit(ed, NULL); }
+static void act_next_split(editor_t *ed)      { editor_next_split(ed); }
+static void act_prev_split(editor_t *ed)      { editor_prev_split(ed); }
+static void act_unsplit(editor_t *ed)         { editor_unsplit(ed); }
+static void act_add_tab(editor_t *ed)         { editor_add_tab(ed, NULL); }
+static void act_next_tab(editor_t *ed)        { editor_next_tab(ed); }
+static void act_prev_tab(editor_t *ed)        { editor_prev_tab(ed); }
+static void act_first_tab(editor_t *ed)
+{
+    if (ed->tabs.count > 0) {
+        ed->tabs.active = 0;
+        editor_set_active_view(ed, ed->tabs.tabs[0]->active_view);
+    }
+}
+static void act_last_tab(editor_t *ed)
+{
+    if (ed->tabs.count > 0) {
+        ed->tabs.active = ed->tabs.count - 1;
+        editor_set_active_view(ed, ed->tabs.tabs[ed->tabs.count - 1]->active_view);
+    }
+}
+static void act_toggle_softwrap(editor_t *ed)
+{
+    if (ed->active_view) {
+        ed->active_view->softwrap = !ed->active_view->softwrap;
+        editor_set_message(ed, "Softwrap toggled %s", ed->active_view->softwrap ? "on" : "off");
+    }
+}
+static void act_toggle_ruler(editor_t *ed)
+{
+    ed->config.ruler = !ed->config.ruler;
+    editor_set_message(ed, "Ruler toggled %s", ed->config.ruler ? "on" : "off");
+}
+
 /* -------------------------------------------------------------------------- */
 /* Action Registry Table                                                      */
 /* -------------------------------------------------------------------------- */
@@ -247,6 +281,22 @@ static const action_def_t g_actions[] = {
     {"Find", act_find},
     {"FindNext", act_find_next},
     {"FindPrevious", act_find_prev},
+
+    /* Milestone 2 Actions */
+    {"VSplit", act_vsplit},
+    {"HSplit", act_hsplit},
+    {"NextSplit", act_next_split},
+    {"PreviousSplit", act_prev_split},
+    {"FirstSplit", act_next_split},
+    {"LastSplit", act_prev_split},
+    {"Unsplit", act_unsplit},
+    {"AddTab", act_add_tab},
+    {"NextTab", act_next_tab},
+    {"PreviousTab", act_prev_tab},
+    {"FirstTab", act_first_tab},
+    {"LastTab", act_last_tab},
+    {"ToggleSoftwrap", act_toggle_softwrap},
+    {"ToggleRuler", act_toggle_ruler},
     {NULL, NULL}
 };
 
@@ -256,6 +306,17 @@ void actions_free(void) {}
 bool actions_execute(editor_t *ed, const char *name)
 {
     if (name == NULL || *name == '\0') return false;
+
+    /* Handle command: prefix (from micro bindings) */
+    if (strncmp(name, "command:", 8) == 0) {
+        name += 8;
+    }
+
+    if (strncmp(name, "togglelocal softwrap", 20) == 0 ||
+        strncmp(name, "toggle softwrap", 15) == 0) {
+        act_toggle_softwrap(ed);
+        return true;
+    }
 
     /* Handle multi-action pipeline 'Action1|Action2' */
     const char *pipe = strchr(name, '|');
@@ -318,6 +379,10 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_PAGE_UP, 0, TAM_MOD_SHIFT, "SelectPageUp"},
     {TAM_KEY_PAGE_DOWN, 0, TAM_MOD_SHIFT, "SelectPageDown"},
 
+    /* Tab navigation with Ctrl-PageUp/Down */
+    {TAM_KEY_PAGE_UP, 0, TAM_MOD_CTRL, "PreviousTab|LastTab"},
+    {TAM_KEY_PAGE_DOWN, 0, TAM_MOD_CTRL, "NextTab|FirstTab"},
+
     /* Basic edits */
     {TAM_KEY_ENTER, 0, 0, "InsertNewline"},
     {TAM_KEY_TAB, 0, 0, "InsertTab"},
@@ -341,8 +406,15 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_CHAR, 'f', TAM_MOD_CTRL, "Find"},
     {TAM_KEY_CHAR, 'n', TAM_MOD_CTRL, "FindNext"},
     {TAM_KEY_CHAR, 'p', TAM_MOD_CTRL, "FindPrevious"},
-    {TAM_KEY_CHAR, 'w', TAM_MOD_CTRL, "DeleteWordLeft"},
     {TAM_KEY_CHAR, 'k', TAM_MOD_CTRL, "CutLine"},
+    {TAM_KEY_CHAR, 'w', TAM_MOD_CTRL, "NextSplit|FirstSplit"},
+    {TAM_KEY_CHAR, 't', TAM_MOD_CTRL, "AddTab"},
+    {TAM_KEY_CHAR, 'r', TAM_MOD_CTRL, "ToggleRuler"},
+
+    /* Alt shortcuts */
+    {TAM_KEY_CHAR, 'w', TAM_MOD_ALT, "ToggleSoftwrap"},
+    {TAM_KEY_CHAR, '.', TAM_MOD_ALT, "NextTab|FirstTab"},
+    {TAM_KEY_CHAR, ',', TAM_MOD_ALT, "PreviousTab|LastTab"},
 
     /* Function keys */
     {TAM_KEY_F2, 0, 0, "Save"},
@@ -367,7 +439,22 @@ bool actions_handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)
         ed->quit_armed = false;
     }
 
-    /* 1. Look up in keybindings table */
+    /* 1. Look up in custom user keybindings first */
+    for (custom_keybind_t *ckb = ed->keybindings; ckb != NULL; ckb = ckb->next) {
+        if (ckb->type == ev->type && ckb->mods == ev->mods) {
+            if (ckb->type == TAM_KEY_CHAR && ckb->codepoint != 0) {
+                if (tolower((unsigned char)ckb->codepoint) !=
+                    tolower((unsigned char)ev->codepoint)) {
+                    continue;
+                }
+            }
+            if (actions_execute(ed, ckb->action)) {
+                return true;
+            }
+        }
+    }
+
+    /* 2. Look up in default keybindings table */
     for (size_t i = 0; g_keybindings[i].action != NULL; i++) {
         const keybind_entry_t *kb = &g_keybindings[i];
         if (kb->type == ev->type && kb->mods == ev->mods) {
@@ -383,7 +470,7 @@ bool actions_handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)
         }
     }
 
-    /* 2. Regular character insertion */
+    /* 3. Regular character insertion */
     if (ev->type == TAM_KEY_CHAR &&
         (ev->mods == 0 || ev->mods == TAM_MOD_SHIFT) &&
         ev->codepoint >= 0x20 && ev->codepoint != 0x7F) {
@@ -391,7 +478,7 @@ bool actions_handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)
         return true;
     }
 
-    /* 3. Handle lone Ctrl-Q when armed */
+    /* 4. Handle lone Ctrl-Q when armed */
     if (ev->type == TAM_KEY_CHAR && (ev->mods & TAM_MOD_CTRL) && ev->codepoint == 'q') {
         if (was_armed) {
             ed->running = false;

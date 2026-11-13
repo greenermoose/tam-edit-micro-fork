@@ -264,8 +264,119 @@ static void execute_command(editor_t *ed, const char *cmd)
         }
         return;
     }
+    if (strncmp(cmd, "vsplit", 6) == 0 && (cmd[6] == ' ' || cmd[6] == '\0')) {
+        const char *arg = cmd + 6;
+        while (*arg == ' ') arg++;
+        editor_vsplit(ed, *arg ? arg : NULL);
+        return;
+    }
+    if (strncmp(cmd, "hsplit", 6) == 0 && (cmd[6] == ' ' || cmd[6] == '\0')) {
+        const char *arg = cmd + 6;
+        while (*arg == ' ') arg++;
+        editor_hsplit(ed, *arg ? arg : NULL);
+        return;
+    }
+    if (strcmp(cmd, "unsplit") == 0) {
+        editor_unsplit(ed);
+        return;
+    }
+    if (strncmp(cmd, "tab ", 4) == 0 || strcmp(cmd, "tab") == 0) {
+        const char *arg = cmd + 3;
+        while (*arg == ' ') arg++;
+        editor_add_tab(ed, *arg ? arg : NULL);
+        return;
+    }
+    if (strcmp(cmd, "tabnext") == 0) {
+        editor_next_tab(ed);
+        return;
+    }
+    if (strcmp(cmd, "tabprev") == 0) {
+        editor_prev_tab(ed);
+        return;
+    }
+    if (strcmp(cmd, "tabclose") == 0) {
+        editor_close_tab(ed);
+        return;
+    }
+    if (strncmp(cmd, "colorscheme ", 12) == 0) {
+        const char *arg = cmd + 12;
+        while (*arg == ' ') arg++;
+        if (*arg != '\0') {
+            if (colorscheme_load(&ed->colorscheme, arg)) {
+                editor_set_message(ed, "Loaded colorscheme '%s'", arg);
+            } else {
+                editor_set_message(ed, "Could not load colorscheme '%s'", arg);
+            }
+        }
+        return;
+    }
+    if (strncmp(cmd, "set ", 4) == 0) {
+        char opt[64] = {0};
+        char val[64] = {0};
+        if (sscanf(cmd + 4, "%63s %63s", opt, val) == 2) {
+            if (config_set(&ed->config, opt, val)) {
+                if (strcmp(opt, "colorscheme") == 0) {
+                    colorscheme_load(&ed->colorscheme, val);
+                }
+                editor_set_message(ed, "Set %s = %s", opt, val);
+            } else {
+                editor_set_message(ed, "Invalid option or value '%s %s'", opt, val);
+            }
+        }
+        return;
+    }
+    if (strncmp(cmd, "setlocal ", 9) == 0) {
+        char opt[64] = {0};
+        char val[64] = {0};
+        if (sscanf(cmd + 9, "%63s %63s", opt, val) == 2) {
+            if (strcmp(opt, "softwrap") == 0) {
+                bool b = (strcmp(val, "true") == 0 || strcmp(val, "on") == 0 || strcmp(val, "1") == 0);
+                if (ed->active_view) ed->active_view->softwrap = b;
+                editor_set_message(ed, "Setlocal softwrap = %s", b ? "true" : "false");
+            } else if (strcmp(opt, "wordwrap") == 0) {
+                bool b = (strcmp(val, "true") == 0 || strcmp(val, "on") == 0 || strcmp(val, "1") == 0);
+                if (ed->active_view) ed->active_view->wordwrap = b;
+                editor_set_message(ed, "Setlocal wordwrap = %s", b ? "true" : "false");
+            } else {
+                editor_set_message(ed, "Unsupported local option '%s'", opt);
+            }
+        }
+        return;
+    }
+    if (strncmp(cmd, "toggle ", 7) == 0) {
+        const char *arg = cmd + 7;
+        while (*arg == ' ') arg++;
+        if (strcmp(arg, "softwrap") == 0) {
+            ed->config.softwrap = !ed->config.softwrap;
+            if (ed->active_view) ed->active_view->softwrap = ed->config.softwrap;
+            editor_set_message(ed, "Global softwrap toggled %s", ed->config.softwrap ? "on" : "off");
+        } else if (strcmp(arg, "wordwrap") == 0) {
+            ed->config.wordwrap = !ed->config.wordwrap;
+            if (ed->active_view) ed->active_view->wordwrap = ed->config.wordwrap;
+            editor_set_message(ed, "Global wordwrap toggled %s", ed->config.wordwrap ? "on" : "off");
+        } else if (strcmp(arg, "ruler") == 0) {
+            ed->config.ruler = !ed->config.ruler;
+            editor_set_message(ed, "Ruler toggled %s", ed->config.ruler ? "on" : "off");
+        } else if (strcmp(arg, "cursorline") == 0) {
+            ed->config.cursorline = !ed->config.cursorline;
+            editor_set_message(ed, "Cursorline toggled %s", ed->config.cursorline ? "on" : "off");
+        }
+        return;
+    }
+    if (strncmp(cmd, "togglelocal ", 12) == 0) {
+        const char *arg = cmd + 12;
+        while (*arg == ' ') arg++;
+        if (strcmp(arg, "softwrap") == 0 && ed->active_view) {
+            ed->active_view->softwrap = !ed->active_view->softwrap;
+            editor_set_message(ed, "Local softwrap toggled %s", ed->active_view->softwrap ? "on" : "off");
+        } else if (strcmp(arg, "wordwrap") == 0 && ed->active_view) {
+            ed->active_view->wordwrap = !ed->active_view->wordwrap;
+            editor_set_message(ed, "Local wordwrap toggled %s", ed->active_view->wordwrap ? "on" : "off");
+        }
+        return;
+    }
     if (strcmp(cmd, "help") == 0) {
-        editor_set_message(ed, "Commands: save, save-as <file>, open <file>, goto <line>, quit");
+        editor_set_message(ed, "Commands: save, open <file>, vsplit, hsplit, tab, tabnext, tabprev, set, toggle");
         return;
     }
 

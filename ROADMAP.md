@@ -2,7 +2,7 @@
 
 **Last update:** 2026-11-12
 **Owner:** Fred
-**Status:** version 0.1.0, Milestone 1 complete: daily-usable editor
+**Status:** version 0.2.0, Milestone 2 complete: views and configuration
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
@@ -11,6 +11,40 @@ This roadmap describes how tam-edit moves from Go to C11 and links only
 usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
+
+**2026-11-12 — version 0.2.0 (Milestone 2 exit: views and configuration).**
+Phase 4 delivers a decoupled buffer/view architecture, multi-split panes,
+tabs, soft wrap, truecolor colorscheme support, native INI configuration,
+and micro configuration import:
+- Decoupled buffer and view architecture: document and undo stack managed in
+  `buffer_t` with reference counting (`buffer_ref`/`buffer_unref`) allowing multiple
+  views to share a single buffer and edit concurrently.
+- Split pane tree: binary layout tree (`pane_node_t`) supporting recursive vertical
+  (`vsplit`) and horizontal (`hsplit`) splits, proportional resizing, view navigation
+  (`Ctrl-W` / `:nextsplit`), unsplit (`:unsplit`), and mouse hit-testing.
+- Multi-tab management: tab list (`tab_list_t`), tab switching (`Alt-.`, `Alt-,`,
+  `Ctrl-PageDown`, `Ctrl-PageUp`, `:tabnext`, `:tabprev`), tab creation (`Ctrl-T`,
+  `:tab`), tab closing (`:tabclose`), and automatic tab bar rendering at row 0.
+- Softwrap and wordwrap: visual sub-line coordinate translation
+  (`edit_softwrap_loc_to_vloc`, `edit_softwrap_vloc_to_rune`, `edit_softwrap_line_sublines`),
+  vertical navigation preserving visual goal column across softwrapped lines, and
+  toggling (`Alt-W`, `:toggle softwrap`, `:togglelocal softwrap`).
+- Colorscheme engine: full parser for micro's `color-link` format (hex `#RRGGBB`,
+  16 ANSI names, 256 palette numbers, text attributes `bold`/`reverse`/`underline`/`italic`),
+  hierarchical group fallback, include recursion protection, embedded `monokai` fallback,
+  and truecolor ANSI escape sequences rendered to the cell grid.
+- Native INI configuration: `tam_ini` reader and writer for `~/.config/tam-edit/settings.ini`
+  with `[settings]` and `[bindings]`, setting validation, runtime commands (`set`,
+  `setlocal`, `toggle`, `togglelocal`), and `--check-config` validation tool.
+- Micro configuration importer: `--import-micro-config [DIR]` with lenient JSON5 parser
+  (handling line/block comments, trailing commas, unquoted keys, single quotes) that
+  migrates settings and bindings into INI format with `.bak` safety backups.
+- Verification: 24 unit tests passing, ASan/UBSan clean with zero leaks, 5 PTY
+  interactive smoke test scenarios passing, and dependency check confirming only libc
+  is linked.
+
+Not yet present: syntax highlighting (Milestone 3), shell execution, encodings,
+and multi-cursor editing (Milestone 4).
 
 **2026-11-12 — version 0.1.0 (Milestone 1 exit: daily-usable editor).**
 Phase 3 delivers a complete daily-usable terminal editor linking only libc and
