@@ -241,7 +241,7 @@ static void test_cell_grid_renderer(void)
     editor_insert_text(&ed, "rendering test line", 19);
 
     /* Painting into grid check */
-    CHECK(render_text_rows(&(tam_tty_t){.rows = 24}) == 22);
+    CHECK(render_text_rows(&(tam_tty_t){.rows = 24}) == 21);
 
     renderer_free(&ren);
     editor_free(&ed);

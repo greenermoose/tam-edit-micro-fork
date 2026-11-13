@@ -253,6 +253,7 @@ static void act_shell_mode(editor_t *ed)
     editor_set_message(ed, "Shell exited (%d)", rc);
 }
 static void act_toggle_help(editor_t *ed)  { prompt_execute_command(ed, "help"); }
+static void act_toggle_key_menu(editor_t *ed) { actions_open_keybindings_help(ed); }
 static void act_toggle_overwrite(editor_t *ed)
 {
     ed->config.overwrite = !ed->config.overwrite;
@@ -370,6 +371,7 @@ static const action_def_t g_actions[] = {
     {"ShellMode", act_shell_mode},
     {"RunShell", act_run_shell},
     {"ToggleHelp", act_toggle_help},
+    {"ToggleKeyMenu", act_toggle_key_menu},
     {"ToggleOverwriteMode", act_toggle_overwrite},
 
     /* Multi-cursor Actions */
@@ -529,10 +531,12 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_CHAR, 'w', TAM_MOD_CTRL, "NextSplit|FirstSplit"},
     {TAM_KEY_CHAR, 't', TAM_MOD_CTRL, "AddTab"},
     {TAM_KEY_CHAR, 'r', TAM_MOD_CTRL, "ToggleRuler"},
+    {TAM_KEY_CHAR, 'g', TAM_MOD_CTRL, "ToggleHelp"},
 
     /* Alt shortcuts */
     {TAM_KEY_CHAR, 'f', TAM_MOD_ALT, "FindLiteral"},
     {TAM_KEY_CHAR, 'w', TAM_MOD_ALT, "ToggleSoftwrap"},
+    {TAM_KEY_CHAR, 'g', TAM_MOD_ALT, "ToggleKeyMenu"},
     {TAM_KEY_CHAR, '.', TAM_MOD_ALT, "NextTab|FirstTab"},
     {TAM_KEY_CHAR, ',', TAM_MOD_ALT, "PreviousTab|LastTab"},
     {TAM_KEY_CHAR, 'n', TAM_MOD_ALT, "SpawnMultiCursor"},
@@ -586,6 +590,45 @@ const char *actions_lookup_key_description(const editor_t *ed, const tam_key_eve
         }
     }
     return NULL;
+}
+
+void actions_open_keybindings_help(editor_t *ed)
+{
+    if (!ed) return;
+    tam_str_t out = tam_str_new("# tam-edit Keybindings\n\n");
+    if (!out) return;
+
+    if (ed->keybindings != NULL) {
+        out = tam_str_cat(out, "## Custom Bindings (settings.ini)\n\n");
+        for (custom_keybind_t *ckb = ed->keybindings; ckb != NULL; ckb = ckb->next) {
+            char kbuf[64];
+            keybind_format_string(ckb->type, ckb->codepoint, ckb->mods, kbuf, sizeof(kbuf));
+            char line[256];
+            snprintf(line, sizeof(line), "  %-20s -> %s\n", kbuf, ckb->action ? ckb->action : "");
+            out = tam_str_cat(out, line);
+        }
+        out = tam_str_cat(out, "\n");
+    }
+
+    out = tam_str_cat(out, "## Default Keybindings\n\n");
+    for (size_t i = 0; g_keybindings[i].action != NULL; i++) {
+        char kbuf[64];
+        keybind_format_string(g_keybindings[i].type, g_keybindings[i].codepoint,
+                              g_keybindings[i].mods, kbuf, sizeof(kbuf));
+        char line[256];
+        snprintf(line, sizeof(line), "  %-20s -> %s\n", kbuf, g_keybindings[i].action);
+        out = tam_str_cat(out, line);
+    }
+
+    out = tam_str_cat(out,
+        "\n## Mouse Bindings\n\n"
+        "  LeftClick            -> Move cursor\n"
+        "  LeftDrag             -> Select text\n"
+        "  WheelUp / WheelDown  -> Scroll view\n"
+        "  Ctrl-LeftClick       -> Toggle multi-cursor\n");
+
+    editor_open_scratch(ed, "help:keybindings", out, true);
+    tam_str_free(out);
 }
 
 bool actions_handle_key(editor_t *ed, const tam_key_event_t *ev, int text_rows)

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=tam-edit
+GenericName=Text Editor
+Comment=Terminal text editor in C11
+Exec=tam-edit %F
+Icon=utilities-terminal
+Terminal=true
+Type=Application
+Categories=Utility;TextEditor;Development;
+MimeType=text/plain;
+Keywords=text;editor;terminal;

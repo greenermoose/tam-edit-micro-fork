@@ -20,22 +20,19 @@ and documentation to the features being ported.
 
 | Branch | Tree | Build | Status |
 | --- | --- | --- | --- |
-| `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, still usable |
-| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 0.4.0: full editing, search, encodings, shell, multi-cursor |
+| `master` | Go, micro's packages with the fork's changes | `make build` (Go 1.19 or later) | Behaviour reference, archived |
+| `c11` | `src/`, a native C11 editor | `make` (libtam 0.7.0 or later) | 1.0.0: parity gate, stabilization, packaging |
 
 New work happens on `c11`. [ROADMAP.md](ROADMAP.md) holds the phase plan and
-the milestone definitions. The Go tree stays on `master`, and on `c11` until
-the C version reaches the 1.0.0 parity gate.
+the milestone definitions. The Go tree has been pruned from `c11` at 1.0.0 and
+remains on `master` as the behaviour reference.
 
-Version 0.4.0 (Milestone 4) delivers the full non-plugin micro feature set in
-C11 while linking only libc and libtam 0.7.0. In addition to Milestone 3
-features, it adds regex capture groups (`(...)`, `(?P<name>...)`) with
-`$0`/`$1`/`${name}` replacement templates, `incsearch`/`hlsearch`/`ignorecase`
-and interactive `replace`/`replaceall`, `iconv` legacy encodings and BOM
-detection, background `run`, `textfilter`, interactive `run -i`, multi-cursor
-editing (`Alt-N`/`Alt-M`/`Alt-X`/`Alt-P`/`Alt-C`, `Alt-Shift-Up/Down`,
-`Ctrl-LeftClick`), `retab`, `bind`/`unbind`/`show`/`showkey`/`reset`, embedded
-`help` topics, and command/path/option tab completion.
+Version 1.0.0 (Milestone 5) completes the Phase 7 parity gate: full parity audit
+([docs/PARITY_AUDIT.md](docs/PARITY_AUDIT.md)), 57 ported VSCode/micro buffer
+corpus tests, large-file/long-line/many-cursor/many-split stress tests,
+ASan+UBSan fuzz harnesses (`make fuzz`), Section 8 performance verification,
+man page (`docs/tam-edit.1`) and desktop entry (`data/tam-edit.desktop`),
+and libc-only linkage.
 
 ## Versioning
 
@@ -87,13 +84,9 @@ make build           # ./tam-edit
 make test
 ```
 
-The Go tree is also present on `c11`, but the C11 Makefile does not build it.
-To check the reference here, use `go build ./...` and `go test ./...`.
-The bundled Lua plugins have been pruned from `c11`; use `master` when
-comparing behavior that depends on them. The Go source, existing tests,
-syntax definitions, colorschemes and help pages remain available beside the C
-code. Upstream release automation, packaging and artwork are kept in Git
-history rather than this working tree.
+The Go tree has been pruned from `c11` at 1.0.0; `master` retains the original
+Go source and tests for reference. Syntax definitions, colorschemes, and help
+pages remain in `runtime/` alongside the embedded tables in `data/`.
 
 ## License
 

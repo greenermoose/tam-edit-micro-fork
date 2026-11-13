@@ -7,7 +7,7 @@ override CFLAGS += -std=c11 -g -Isrc -Idata -D_POSIX_C_SOURCE=200809L -D_GNU_SOU
 LDFLAGS ?=
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
-VERSION := 0.4.0
+VERSION := 1.0.0
 PREFIX ?= $(HOME)/.local/dev
 
 # Look for libtam in $(PREFIX)/lib/pkgconfig if not already in system search path
@@ -27,9 +27,9 @@ DATA_SRCS = data/syntax_data.c data/colorschemes_data.c data/help_data.c
 SRCS = src/main.c $(CORE_SRCS)
 OBJS = $(patsubst src/%.c,$(BUILD)/%.o,$(SRCS))
 DATA_OBJS = $(patsubst data/%.c,$(BUILD)/data_%.o,$(DATA_SRCS))
-TEST_SRCS = $(CORE_SRCS) $(DATA_SRCS) tests/test_editor.c tests/test_milestone1.c tests/test_milestone2.c tests/test_milestone3.c tests/test_milestone4.c
+TEST_SRCS = $(CORE_SRCS) $(DATA_SRCS) tests/test_editor.c tests/test_milestone1.c tests/test_milestone2.c tests/test_milestone3.c tests/test_milestone4.c tests/test_milestone5.c
 
-.PHONY: all test test-asan test-pty clean install uninstall check-deps gen-data
+.PHONY: all test test-asan test-pty fuzz clean install uninstall check-deps gen-data
 
 all: $(BIN)
 
@@ -66,6 +66,18 @@ test-asan: $(TEST_ASAN_BIN)
 test-pty: $(BIN)
 	python3 tests/test_pty_smoke.py
 
+FUZZ_CFLAGS = $(CFLAGS) -fsanitize=address,undefined $(LIBTAM_CFLAGS)
+fuzz: $(CORE_SRCS) $(DATA_SRCS) | $(BUILD)
+	$(CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_regex.c $(CORE_SRCS) $(DATA_SRCS) $(LIBTAM_LIBS) -o $(BUILD)/fuzz_regex
+	$(CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_config.c $(CORE_SRCS) $(DATA_SRCS) $(LIBTAM_LIBS) -o $(BUILD)/fuzz_config
+	$(CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_syntax.c $(CORE_SRCS) $(DATA_SRCS) $(LIBTAM_LIBS) -o $(BUILD)/fuzz_syntax
+	$(CC) $(FUZZ_CFLAGS) tests/fuzz/fuzz_input.c $(CORE_SRCS) $(DATA_SRCS) $(LIBTAM_LIBS) -o $(BUILD)/fuzz_input
+	$(abspath $(BUILD)/fuzz_regex) tests/fuzz/seeds/regex
+	$(abspath $(BUILD)/fuzz_config) tests/fuzz/seeds/config
+	$(abspath $(BUILD)/fuzz_syntax) tests/fuzz/seeds/syntax
+	$(abspath $(BUILD)/fuzz_input) tests/fuzz/seeds/input
+	@echo "tam-edit: all 4 fuzz harnesses passed (ASan+UBSan)"
+
 # The finished binary must not pull in a shared libtam, ncurses or terminfo.
 check-deps: $(BIN)
 	@if ldd $(BIN) | grep -Eq 'libtam|libncurses|libtinfo|libtcell'; then \
@@ -79,10 +91,14 @@ clean:
 	rm -rf $(BUILD)
 
 install: $(BIN)
-	install -d $(DESTDIR)$(PREFIX)/bin
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1 $(DESTDIR)$(PREFIX)/share/applications
 	install -m 755 $(BIN) $(DESTDIR)$(PREFIX)/bin/tam-edit
+	install -m 644 docs/tam-edit.1 $(DESTDIR)$(PREFIX)/share/man/man1/tam-edit.1
+	install -m 644 data/tam-edit.desktop $(DESTDIR)$(PREFIX)/share/applications/tam-edit.desktop
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/tam-edit
+	rm -f $(DESTDIR)$(PREFIX)/bin/tam-edit \
+		$(DESTDIR)$(PREFIX)/share/man/man1/tam-edit.1 \
+		$(DESTDIR)$(PREFIX)/share/applications/tam-edit.desktop
 
 -include $(OBJS:.o=.d) $(DATA_OBJS:.o=.d)

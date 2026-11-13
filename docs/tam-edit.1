@@ -1,0 +1,78 @@
+.TH TAM-EDIT 1 "November 2026" "tam-edit 1.0.0" "User Commands"
+.SH NAME
+tam-edit \- terminal text editor in C11
+.SH SYNOPSIS
+.B tam-edit
+[\fIOPTIONS\fR] [\fI+LINE[:COL]\fR] [\fIFILE\fR...]
+.SH DESCRIPTION
+.B tam-edit
+is a terminal text editor written in C11, linking only \fBlibtam\fR and the C
+standard library. It provides multi-tab and split-pane editing, grouped undo,
+selections, multi-cursor editing, UTF-8 and legacy encodings via \fBiconv\fR,
+regex search and replace, syntax highlighting for 158 embedded definitions,
+25 embedded colorschemes, and interactive shell commands.
+.SH OPTIONS
+.TP
+.B +LINE[:COL]
+Jump to 1-based \fILINE\fR (and optional 1-based \fICOL\fR) when opening the first file.
+.TP
+.BR \-h ", " \-\-help
+Show a summary of default keybindings and command-line options.
+.TP
+.BR \-v ", " \-\-version
+Print the \fBtam-edit\fR and \fBlibtam\fR versions and exit.
+.TP
+.BR \-\-check\-config " [\fIPATH\fR]"
+Validate \fIsettings.ini\fR (or \fIPATH\fR) and exit with status 0 if valid.
+.TP
+.BR \-\-import\-micro\-config " [\fIDIR\fR]"
+Import \fIsettings.json\fR and \fIbindings.json\fR from \fIDIR\fR (default
+\fI~/.config/micro\fR) into \fItam-edit\fR INI format.
+.TP
+.BR \-\-dump\-syntax " \fIFILE\fR"
+Print per-line syntax highlight spans for \fIFILE\fR and exit.
+.SH KEYBINDINGS
+.TP
+.B Ctrl-S / F2
+Save current buffer.
+.TP
+.B Ctrl-Q / F4 / F10
+Quit (press twice or confirm on modified buffers).
+.TP
+.B Ctrl-Z / Ctrl-Y
+Undo / Redo.
+.TP
+.B Ctrl-C / Ctrl-X / Ctrl-V
+Copy / Cut / Paste.
+.TP
+.B Ctrl-F / Alt-F / Ctrl-N / Ctrl-P
+Find (regex) / Find (literal) / Find next / Find previous.
+.TP
+.B Ctrl-E / Ctrl-L / Ctrl-B
+Command prompt / Go to line / Shell prompt.
+.TP
+.B Alt-N / Alt-M / Alt-X / Alt-P / Alt-C
+Multi-cursor spawn, select-all-matches, skip, remove last, remove all.
+.TP
+.B Ctrl-T / Alt-. / Alt-, / Ctrl-W
+New tab / Next tab / Previous tab / Next split.
+.TP
+.B F1 / Ctrl-G
+Open embedded help.
+.SH ENVIRONMENT
+.TP
+.B TAM_EDIT_CONFIG_HOME
+Override the configuration directory (default: \fI$XDG_CONFIG_HOME/tam-edit\fR
+or \fI~/.config/tam-edit\fR).
+.TP
+.B TAM_EDIT_TRUECOLOR
+Set to \fB1\fR to force 24-bit truecolor output.
+.SH FILES
+.TP
+.I ~/.config/tam-edit/settings.ini
+INI configuration file with \fB[settings]\fR and \fB[bindings]\fR sections.
+.TP
+.I ~/.config/tam-edit/syntax/*.yaml
+User syntax definition overrides.
+.SH LICENSE
+GPLv3 (retaining upstream MIT notices from micro).

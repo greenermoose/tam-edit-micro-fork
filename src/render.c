@@ -131,7 +131,7 @@ static bool byte_in_matches(const tam_regex_match_t *ms, size_t count, size_t by
 int render_text_rows(const tam_tty_t *tty)
 {
     int rows = tty->rows > 0 ? tty->rows : 24;
-    int text_rows = rows - 2;
+    int text_rows = rows - 3;
     return text_rows > 0 ? text_rows : 1;
 }
 
@@ -560,11 +560,67 @@ static void render_paint_prompt_or_message(editor_t *ed, grid_t *g, int row)
 /* Terminal Diffing and Flush                                                 */
 /* -------------------------------------------------------------------------- */
 
+static void render_paint_keybindings_footer(editor_t *ed, grid_t *g, int row)
+{
+    typedef struct {
+        const char *key;
+        const char *desc;
+    } footer_hint_t;
+
+    static const footer_hint_t hints[] = {
+        {"^S", "Save"},
+        {"^Q", "Quit"},
+        {"^Z", "Undo"},
+        {"^F", "Find"},
+        {"^C", "Copy"},
+        {"^E", "Cmd"},
+        {"^G", "Help"},
+        {"M-G", "Keys"},
+        {"^V", "Paste"},
+        {"^Y", "Redo"},
+        {"^X", "Cut"},
+        {NULL, NULL}
+    };
+
+    style_t st_style = colorscheme_get(&ed->colorscheme, "statusline");
+    uint32_t fg = st_style.fg;
+    uint32_t bg = st_style.bg;
+    uint16_t base_attr = st_style.attr;
+    if (fg == COLOR_DEFAULT && bg == COLOR_DEFAULT) {
+        base_attr = ATTR_REVERSE;
+    }
+
+    for (int c = 0; c < g->cols; c++) {
+        set_cell(g, row, c, ' ', fg, bg, base_attr, 1);
+    }
+
+    int col = 1;
+    for (size_t i = 0; hints[i].key != NULL && col < g->cols; i++) {
+        if (i > 0) {
+            if (col + 2 >= g->cols) break;
+            set_cell(g, row, col++, ' ', fg, bg, base_attr, 1);
+            set_cell(g, row, col++, ' ', fg, bg, base_attr, 1);
+        }
+        const char *k = hints[i].key;
+        while (*k != '\0' && col < g->cols) {
+            set_cell(g, row, col++, (unsigned char)*k++, fg, bg,
+                     (uint16_t)(base_attr | ATTR_BOLD), 1);
+        }
+        if (col < g->cols) {
+            set_cell(g, row, col++, ' ', fg, bg, base_attr, 1);
+        }
+        const char *d = hints[i].desc;
+        while (*d != '\0' && col < g->cols) {
+            set_cell(g, row, col++, (unsigned char)*d++, fg, bg, base_attr, 1);
+        }
+    }
+}
+
 void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
 {
     int rows = tty->rows > 0 ? tty->rows : 24;
     int cols = tty->cols > 0 ? tty->cols : 80;
-    if (rows < 3) rows = 3;
+    if (rows < 4) rows = 4;
     if (cols < 2) cols = 2;
 
     renderer_resize(ren, rows, cols);
@@ -592,7 +648,8 @@ void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
     bool show_tabbar = (ed->config.tabbar == TABBAR_ON) ||
                        (ed->config.tabbar == TABBAR_AUTO && ed->tabs.count > 1);
     int content_top = show_tabbar ? 1 : 0;
-    int bottom_prompt_row = rows - 1;
+    int bottom_keys_row = rows - 1;
+    int bottom_prompt_row = rows - 2;
     int content_height = bottom_prompt_row - content_top;
     if (content_height < 1) content_height = 1;
 
@@ -608,8 +665,9 @@ void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
                                      def_style, num_style, cur_num_style, curline_style);
     }
 
-    /* 4. Paint Prompt / Message line */
+    /* 4. Paint Prompt / Message line and Keybindings footer row */
     render_paint_prompt_or_message(ed, &ren->back, bottom_prompt_row);
+    render_paint_keybindings_footer(ed, &ren->back, bottom_keys_row);
 
     /* 5. Damage diffing and flush with ANSI/Truecolor */
     tam_str_t out = tam_str_new("");
@@ -717,7 +775,7 @@ void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
     /* 6. Hardware cursor placement */
     int crow, ccol;
     if (ed->prompt.active) {
-        crow = rows;
+        crow = bottom_prompt_row + 1;
         int lbl_w = (int)strlen(ed->prompt.label);
         int prompt_cx_cells = edit_visual_col(ed->prompt.buf, ed->prompt.len, ed->prompt.cx);
         ccol = lbl_w + prompt_cx_cells + 1;

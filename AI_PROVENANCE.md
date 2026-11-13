@@ -14,3 +14,5 @@ boundary and verification. Transcripts are retained privately by the author.
 | Milestone 1 (version 0.1.0 daily-usable editor) | Antigravity CLI (Gemini 3.8 Flash) | [2026-11-12](docs/ai/2026-11-12-milestone-1.md) |
 | Milestone 2 (version 0.2.0 views and configuration) | Antigravity CLI (Gemini 3.8 Flash) | [2026-11-12](docs/ai/2026-11-12-milestone-2.md) |
 | Milestone 3 (version 0.3.0 syntax highlighting) | Antigravity CLI | [2026-11-13](docs/ai/2026-11-13-milestone-3.md) |
+| Milestone 4 (version 0.4.0 full editing, search, encodings, shell, multi-cursor) | Antigravity CLI | [2026-11-13](docs/ai/2026-11-13-milestone-4.md) |
+| Milestone 5 (version 1.0.0 stabilization and parity gate) | Antigravity CLI | [2026-11-13](docs/ai/2026-11-13-milestone-5.md) |

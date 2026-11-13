@@ -155,8 +155,8 @@ void editor_raw_insert(editor_t *ed, size_t line, size_t col,
         const char *p = text + rest_offset;
         size_t rem = len - rest_offset;
 
-        while (rem > 0) {
-            const char *next_nl = memchr(p, '\n', rem);
+        for (;;) {
+            const char *next_nl = (rem > 0) ? memchr(p, '\n', rem) : NULL;
             if (next_nl == NULL) {
                 size_t p_len = rem;
                 size_t combined_len = p_len + (tail ? tail_len : 0);
@@ -914,6 +914,7 @@ bool editor_textfilter(editor_t *ed, const char *cmd)
     }
     if (!input) return false;
 
+    bool had_nl = (in_len > 0 && input[in_len - 1] == '\n');
     char *out_text = NULL;
     size_t out_len = 0;
     char err[192] = "";
@@ -924,18 +925,11 @@ bool editor_textfilter(editor_t *ed, const char *cmd)
         return false;
     }
 
-    /* Trim single trailing newline when filtering a selection or keeping final structure? */
-    if (has_sel && out_len > 0 && out_text[out_len - 1] == '\n') {
-        /* Preserve line count if original selection didn't end on '\n' */
-        size_t orig_in = 0;
-        char *tmp = selection_get_text(ed, &orig_in);
-        bool had_nl = (tmp && orig_in > 0 && tmp[orig_in - 1] == '\n');
-        free(tmp);
-        if (!had_nl) {
-            out_len--;
-            if (out_len > 0 && out_text[out_len - 1] == '\r') out_len--;
-            out_text[out_len] = '\0';
-        }
+    /* Trim single trailing newline when original input didn't end on '\n' */
+    if (!had_nl && out_len > 0 && out_text[out_len - 1] == '\n') {
+        out_len--;
+        if (out_len > 0 && out_text[out_len - 1] == '\r') out_len--;
+        out_text[out_len] = '\0';
     }
 
     undo_begin_group(ed);

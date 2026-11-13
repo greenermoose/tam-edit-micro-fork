@@ -913,6 +913,11 @@ void prompt_execute_command(editor_t *ed, const char *cmd)
         prompt_open_show_key(ed);
     } else if (strcmp(op, "help") == 0) {
         const char *topic = (argc > 1) ? argv[1] : "help";
+        if (strcmp(topic, "keybindings") == 0 || strcmp(topic, "keys") == 0) {
+            actions_open_keybindings_help(ed);
+            shell_split_free(argv, argc);
+            return;
+        }
         const char *found = NULL;
         for (size_t i = 0; i < g_embedded_help_count; i++) {
             if (strcmp(g_embedded_help[i].name, topic) == 0) {

@@ -2,7 +2,7 @@
 
 **Last update:** 2026-11-13
 **Owner:** Fred
-**Status:** version 0.4.0, Milestone 4 complete: full editing, search, encodings, shell, and multi-cursor
+**Status:** version 1.0.0, Milestone 5 complete: parity gate, stabilization, fuzzing, and packaging
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
@@ -11,6 +11,25 @@ This roadmap describes how tam-edit moves from Go to C11 and links only
 usable on `master` until the C version reaches the 1.0.0 parity gate.
 
 ## Status
+
+**2026-11-13 — version 1.0.0 (Milestone 5 exit: parity gate, stabilization & packaging).**
+Phase 7 completes the C11 migration and satisfies the Section 10 definition of done:
+- Parity audit & fixes (`docs/PARITY_AUDIT.md`, `src/editor.c`, `src/actions.c`, `src/main.c`):
+  complete audit of commands, settings, default keybindings, and CLI flags with
+  intentional v1 omissions documented; fixed `editor_raw_insert` trailing-newline
+  handling, `editor_textfilter` trailing-newline trimming, `Ctrl-g` help binding,
+  and `+LINE[:COL]` startup jump.
+- Ported corpus & stress tests (`tests/ported_buffer_fixtures.h`, `tests/test_milestone5.c`):
+  57 ported VSCode/micro buffer edit cases and stress tests for 50,000-line files,
+  20,000-byte UTF-8 softwrapped lines, 220 multi-cursors, and 16 splits across 4 tabs.
+- Fuzzing (`tests/fuzz/`, `make fuzz`): ASan+UBSan fuzz harnesses and seed corpora
+  for `tam_regex`, INI/JSON5 config, flat-YAML syntax overrides, and `tam_key`/input.
+- Packaging & cleanup: man page (`docs/tam-edit.1`), desktop entry
+  (`data/tam-edit.desktop`), `install`/`uninstall` Makefile targets, and Go
+  reference tree pruned from `c11` (retained on `master`).
+- Benchmarks (`tools/bench_compare.py`): binary size `1.44 MB` (`<= 5 MB`),
+  80×24 startup `3.25 ms` (`<= 25 ms`), 80×24 keystroke `0.05 ms` (`<= 16 ms`),
+  10k-line keystroke `0.03 ms` (`<= 50 ms`), 10k-line `VmHWM` `4.81 MB` (`<= 15 MB`).
 
 **2026-11-13 — version 0.4.0 (Milestone 4 exit: full editing, search, encodings, shell & multi-cursor).**
 Phase 6 delivers the full non-plugin micro feature set in C11 while linking only

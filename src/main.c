@@ -91,6 +91,7 @@ static void usage(FILE *out)
         "  Ctrl-R                                    toggle line numbers\n"
         "\n"
         "Options:\n"
+        "  +LINE[:COL]                 jump to line (and optional column) on open\n"
         "  -h, --help                  show this help\n"
         "  -v, --version               show the version\n"
         "  --check-config              validate ~/.config/tam-edit/settings.ini\n"
@@ -279,6 +280,8 @@ int main(int argc, char **argv)
 {
     const char *files[64];
     size_t file_count = 0;
+    long init_line = 0;
+    long init_col = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -305,6 +308,16 @@ int main(int argc, char **argv)
                 return 2;
             }
             return dump_syntax_file(argv[++i]);
+        }
+        if (argv[i][0] == '+' && argv[i][1] >= '0' && argv[i][1] <= '9') {
+            char *colon = NULL;
+            long ln = strtol(argv[i] + 1, &colon, 10);
+            if (ln > 0) init_line = ln;
+            if (colon && *colon == ':' && colon[1] >= '0' && colon[1] <= '9') {
+                long cl = strtol(colon + 1, NULL, 10);
+                if (cl > 0) init_col = cl;
+            }
+            continue;
         }
         if (argv[i][0] == '-') {
             fprintf(stderr, "tam-edit: unknown option '%s'\n", argv[i]);
@@ -335,6 +348,17 @@ int main(int argc, char **argv)
         }
         ed.tabs.active = 0;
         editor_set_active_view(&ed, ed.tabs.tabs[0]->active_view);
+        if (init_line > 0) {
+            size_t ln = (size_t)(init_line - 1);
+            if (ln >= ed.doc.count) ln = ed.doc.count > 0 ? ed.doc.count - 1 : 0;
+            ed.cx_line = ln;
+            size_t max_col = edit_line_runes(ed.doc.lines[ln], ed.doc.lens[ln]);
+            size_t cl = (init_col > 0) ? (size_t)(init_col - 1) : 0;
+            if (cl > max_col) cl = max_col;
+            ed.cx_col = cl;
+            ed.goal_col = cl;
+            editor_sync_to_active(&ed);
+        }
     }
 
     tam_tty_t tty = {0};

@@ -287,6 +287,7 @@ void test_milestone1_run(void);
 int  run_milestone2_tests(void);
 int  run_milestone3_tests(void);
 int  run_milestone4_tests(void);
+int  run_milestone5_tests(void);
 
 int main(void)
 {
@@ -315,6 +316,7 @@ int main(void)
     run_milestone2_tests();
     run_milestone3_tests();
     run_milestone4_tests();
+    run_milestone5_tests();
     syntax_registry_free();
     char ini_path[300];
     snprintf(ini_path, sizeof(ini_path), "%s/settings.ini", test_cfg_dir);
