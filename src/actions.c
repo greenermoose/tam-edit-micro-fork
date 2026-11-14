@@ -252,7 +252,57 @@ static void act_shell_mode(editor_t *ed)
     int rc = shell_run_interactive(ed->tty, NULL, false, true);
     editor_set_message(ed, "Shell exited (%d)", rc);
 }
-static void act_toggle_help(editor_t *ed)  { prompt_execute_command(ed, "help"); }
+static bool is_help_view(const view_t *v)
+{
+    return v != NULL && v->buf != NULL && v->buf->scratch &&
+           v->buf->path != NULL && strncmp(v->buf->path, "help:", 5) == 0;
+}
+
+static bool close_help_view(editor_t *ed, view_t *v)
+{
+    if (!ed || !is_help_view(v) || ed->tabs.count == 0) return false;
+    tab_t *cur_tab = ed->tabs.tabs[ed->tabs.active];
+    pane_node_t *node = pane_find_view(cur_tab->root, v);
+    if (node == NULL) return false;
+    if (node != cur_tab->root) {
+        if (v == ed->active_view) {
+            view_t *next_v = pane_next_view(cur_tab->root, v);
+            if (next_v != NULL && next_v != v) {
+                editor_set_active_view(ed, next_v);
+            } else {
+                ed->active_view = NULL;
+            }
+        }
+        pane_close(cur_tab->root, node, &cur_tab->root);
+        return true;
+    }
+    if (ed->tabs.count > 1) {
+        return editor_close_tab(ed);
+    }
+    return false;
+}
+
+static view_t *find_help_view_in_node(pane_node_t *n)
+{
+    if (!n) return NULL;
+    if (n->view != NULL) {
+        return is_help_view(n->view) ? n->view : NULL;
+    }
+    view_t *c1 = find_help_view_in_node(n->child1);
+    return c1 ? c1 : find_help_view_in_node(n->child2);
+}
+
+static void act_toggle_help(editor_t *ed)
+{
+    if (is_help_view(ed->active_view)) {
+        if (close_help_view(ed, ed->active_view)) return;
+    }
+    if (ed->tabs.count > 0 && ed->tabs.active < ed->tabs.count) {
+        view_t *hv = find_help_view_in_node(ed->tabs.tabs[ed->tabs.active]->root);
+        if (hv != NULL && close_help_view(ed, hv)) return;
+    }
+    prompt_execute_command(ed, "help");
+}
 static void act_toggle_key_menu(editor_t *ed) { actions_open_keybindings_help(ed); }
 static void act_toggle_overwrite(editor_t *ed)
 {
@@ -442,6 +492,10 @@ bool actions_execute(editor_t *ed, const char *name)
         return actions_execute(ed, pipe + 1);
     }
 
+    if (strcmp(name, "CloseHelp") == 0) {
+        return close_help_view(ed, ed->active_view);
+    }
+
     if (strcmp(name, "RemoveAllMultiCursors") == 0) {
         if (ed->extra_count == 0) return false;
         editor_remove_all_cursors(ed);
@@ -531,7 +585,7 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_CHAR, 'w', TAM_MOD_CTRL, "NextSplit|FirstSplit"},
     {TAM_KEY_CHAR, 't', TAM_MOD_CTRL, "AddTab"},
     {TAM_KEY_CHAR, 'r', TAM_MOD_CTRL, "ToggleRuler"},
-    {TAM_KEY_CHAR, 'g', TAM_MOD_CTRL, "ToggleHelp"},
+    {TAM_KEY_CHAR, 'h', TAM_MOD_CTRL, "ToggleHelp"},
 
     /* Alt shortcuts */
     {TAM_KEY_CHAR, 'f', TAM_MOD_ALT, "FindLiteral"},
@@ -558,7 +612,7 @@ static const keybind_entry_t g_keybindings[] = {
     {TAM_KEY_F10, 0, 0, "Quit"},
 
     /* Esc */
-    {TAM_KEY_ESC, 0, 0, "RemoveAllMultiCursors|Deselect"},
+    {TAM_KEY_ESC, 0, 0, "CloseHelp|RemoveAllMultiCursors|Deselect"},
 
     {TAM_KEY_NONE, 0, 0, NULL}
 };

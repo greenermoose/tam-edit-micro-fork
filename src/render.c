@@ -574,7 +574,7 @@ static void render_paint_keybindings_footer(editor_t *ed, grid_t *g, int row)
         {"^F", "Find"},
         {"^C", "Copy"},
         {"^E", "Cmd"},
-        {"^G", "Help"},
+        {"^H", "Help"},
         {"M-G", "Keys"},
         {"^V", "Paste"},
         {"^Y", "Redo"},

@@ -292,14 +292,26 @@ static void test_parity_ctrl_g_help(void)
     editor_t ed;
     editor_init(&ed);
 
+    /* Ctrl-h opens help, pressing Ctrl-h again closes it */
     tam_key_event_t ev = {0};
     ev.type = TAM_KEY_CHAR;
-    ev.codepoint = 'g';
+    ev.codepoint = 'h';
     ev.mods = TAM_MOD_CTRL;
     M5_CHECK(actions_handle_key(&ed, &ev, 24));
     M5_CHECK(ed.active_view != NULL && ed.active_view->buf != NULL && ed.active_view->buf->scratch);
 
+    M5_CHECK(actions_handle_key(&ed, &ev, 24));
+    M5_CHECK(ed.active_view != NULL && ed.active_view->buf != NULL && !ed.active_view->buf->scratch);
+
+    /* Ctrl-h opens help, Esc closes it */
+    M5_CHECK(actions_handle_key(&ed, &ev, 24));
+    M5_CHECK(ed.active_view != NULL && ed.active_view->buf != NULL && ed.active_view->buf->scratch);
+    tam_key_event_t esc = {.type = TAM_KEY_ESC, .codepoint = 0, .mods = 0};
+    M5_CHECK(actions_handle_key(&ed, &esc, 24));
+    M5_CHECK(ed.active_view != NULL && ed.active_view->buf != NULL && !ed.active_view->buf->scratch);
+
     /* Alt-g opens live keybindings help listing all bindings */
+    ev.codepoint = 'g';
     ev.mods = TAM_MOD_ALT;
     M5_CHECK(actions_handle_key(&ed, &ev, 24));
     M5_CHECK(ed.active_view != NULL && ed.active_view->buf != NULL && ed.active_view->buf->scratch);

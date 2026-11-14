@@ -49,7 +49,7 @@ Audit of the C11 editor (`src/`) against the Go `micro` reference (`internal/`, 
 
 - **Navigation & Selection:** `Up`, `Down`, `Left`, `Right`, `Shift+Arrows`, `Ctrl+Left/Right`, `Ctrl+Shift+Left/Right`, `Home`/`End`, `Shift+Home/End`, `Ctrl+Home/End`, `Ctrl+Shift+Home/End`, `PageUp`/`PageDown`, `Shift+PageUp/PageDown`, `Ctrl+PageUp/PageDown` — **Parity**.
 - **Editing:** `Enter`, `Tab`, `Backspace`, `Delete`, `Insert` (`ToggleOverwriteMode`), `Ctrl+Backspace`/`Alt+Backspace` (`DeleteWordLeft`), `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C`, `Ctrl+X`, `Ctrl+K`, `Ctrl+V`, `Ctrl+D`, `Ctrl+A`, `Alt+Up`/`Alt+Down` (`MoveLinesUp/Down`) — **Parity**.
-- **Files, Search, Views, Help:** `Ctrl+S`/`F2`, `Ctrl+O`, `Ctrl+Q`/`F4`/`F10`, `Ctrl+F`/`F7`, `Alt+F` (`FindLiteral`), `Ctrl+N`, `Ctrl+P`, `Ctrl+E`, `Ctrl+L`, `Ctrl+B`, `Ctrl+W`, `Ctrl+T`, `Ctrl+R`, `Alt+W`, `Alt+.`/`Alt+,`, `F1`/`Ctrl+G` (`ToggleHelp` — `Ctrl+G` added in v1.0.0) — **Parity**.
+- **Files, Search, Views, Help:** `Ctrl+S`/`F2`, `Ctrl+O`, `Ctrl+Q`/`F4`/`F10`, `Ctrl+F`/`F7`, `Alt+F` (`FindLiteral`), `Ctrl+N`, `Ctrl+P`, `Ctrl+E`, `Ctrl+L`, `Ctrl+B`, `Ctrl+W`, `Ctrl+T`, `Ctrl+R`, `Alt+W`, `Alt+.`/`Alt+,`, `F1`/`Ctrl+H` (`ToggleHelp`, `Esc` closes help) — **Parity** (`Ctrl+H` replaces micro's `Ctrl+G`).
 - **Multi-Cursor & Esc:** `Alt+N`, `Alt+M`, `Alt+X`, `Alt+P`, `Alt+C`, `Alt+Shift+Up/Down`, `Ctrl+LeftClick`, `Esc` (`RemoveAllMultiCursors|Deselect`) — **Parity**.
 - **Intentional differences:**
   - `F3` is bound to `FindNext` (micro binds `F3` to `Find`).
