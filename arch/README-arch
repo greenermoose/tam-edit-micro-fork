@@ -1,0 +1,11 @@
+ARCHITECTURE DIRECTORY (tam-edit)
+
+This folder is for architecture notes. It documents the internal data
+structures, memory ownership models, and core algorithms used in our C11
+implementation of tam-edit, as well as architectural trade-offs under the
+Tamlinux philosophy (pure C11, minimal dependencies, libtam-only linkage,
+and first-class Linux virtual console support).
+
+Contents:
+
+- tam-edit.md : Data structures and algorithms implemented in src/.
