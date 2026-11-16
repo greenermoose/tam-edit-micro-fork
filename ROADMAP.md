@@ -2,7 +2,7 @@
 
 **Last update:** 2026-11-13
 **Owner:** Fred
-**Status:** version 1.0.0, Milestone 5 complete: parity gate, stabilization, fuzzing, and packaging
+**Status:** version 1.0.1, Milestone 5 complete: parity gate, stabilization, fuzzing, and packaging
 **Target branch:** `c11` in `greenermoose/tam-edit`
 **Starting point:** the Go tam-edit fork at commit `85beac1e` (micro 2.0.15 lineage)
 
