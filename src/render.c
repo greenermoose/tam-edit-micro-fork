@@ -637,6 +637,14 @@ static void render_paint_keybindings_footer(editor_t *ed, grid_t *g, int row)
             set_cell(g, row, col++, (unsigned char)*d++, fg, bg, base_attr, 1);
         }
     }
+
+    const char *ver = "v" TAM_EDIT_VERSION;
+    int vlen = (int)strlen(ver);
+    int vstart = g->cols - vlen - 1;
+    if (vstart < 0) vstart = 0;
+    for (int i = 0; i < vlen && vstart + i < g->cols; i++) {
+        set_cell(g, row, vstart + i, (unsigned char)ver[i], fg, bg, base_attr, 1);
+    }
 }
 
 void render_draw(renderer_t *ren, editor_t *ed, tam_tty_t *tty)
