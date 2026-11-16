@@ -73,6 +73,38 @@ static void update_selection(editor_t *ed, bool select)
     }
 }
 
+static int softwrap_text_cols(const editor_t *ed)
+{
+    int view_w = (ed->active_view != NULL && ed->active_view->w > 1)
+                 ? ed->active_view->w : 80;
+    int gw = 0;
+    if (ed->config.ruler) {
+        gw = 4;
+        if (ed->doc.count >= 1000) gw = 5;
+        if (ed->doc.count >= 10000) gw = 6;
+        if (gw >= view_w / 2) gw = 0;
+    }
+    int width = view_w - gw;
+    return width < 1 ? 1 : width;
+}
+
+static void update_goal_col(editor_t *ed)
+{
+    if (ed->active_view != NULL && ed->active_view->softwrap &&
+        ed->cx_line < ed->doc.count) {
+        int width = softwrap_text_cols(ed);
+        int tabsize = ed->config.tabsize > 0 ? ed->config.tabsize : 4;
+        int vx = 0;
+        edit_softwrap_loc_to_vloc(ed->doc.lines[ed->cx_line],
+                                  ed->doc.lens[ed->cx_line],
+                                  ed->cx_col, width, tabsize,
+                                  ed->active_view->wordwrap, NULL, &vx);
+        ed->goal_col = (size_t)vx;
+    } else {
+        ed->goal_col = ed->cx_col;
+    }
+}
+
 static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
 {
     if (!select && ed->sel.active && dx != 0 && dy == 0) {
@@ -85,7 +117,7 @@ static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
             ed->cx_line = end.line;
             ed->cx_col  = end.col;
         }
-        ed->goal_col = ed->cx_col;
+        update_goal_col(ed);
         ed->sel.active = false;
         return;
     }
@@ -120,7 +152,7 @@ static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
 
     if (dy != 0) {
         if (ed->active_view != NULL && ed->active_view->softwrap && ed->doc.count > 0) {
-            int width = ed->active_view->w > 1 ? ed->active_view->w : 80;
+            int width = softwrap_text_cols(ed);
             int tabsize = ed->config.tabsize > 0 ? ed->config.tabsize : 4;
             bool wordwrap = ed->active_view->wordwrap;
 
@@ -187,7 +219,7 @@ static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
             if (ed->cx_line > 0) {
                 ed->cx_line--;
                 ed->cx_col = cur_line_runes(ed);
-                ed->goal_col = ed->cx_col;
+                update_goal_col(ed);
             } else {
                 ed->cx_col = 0;
                 ed->goal_col = 0;
@@ -201,11 +233,11 @@ static void cursor_move_single(editor_t *ed, long dx, long dy, bool select)
                     ed->goal_col = 0;
                 } else {
                     ed->cx_col = runes;
-                    ed->goal_col = runes;
+                    update_goal_col(ed);
                 }
             } else {
                 ed->cx_col = (size_t)col;
-                ed->goal_col = ed->cx_col;
+                update_goal_col(ed);
             }
         }
     }
@@ -237,6 +269,7 @@ void cursor_move(editor_t *ed, long dx, long dy, bool select)
         ed->extra_count = n;
         editor_merge_cursors(ed);
     }
+    editor_sync_to_active(ed);
 }
 
 static void cursor_home_single(editor_t *ed, bool select)
@@ -278,6 +311,7 @@ void cursor_home(editor_t *ed, bool select)
         ed->extra_count = n;
         editor_merge_cursors(ed);
     }
+    editor_sync_to_active(ed);
 }
 
 static void cursor_end_single(editor_t *ed, bool select)
@@ -301,6 +335,7 @@ void cursor_end(editor_t *ed, bool select)
         ed->extra_count = n;
         editor_merge_cursors(ed);
     }
+    editor_sync_to_active(ed);
 }
 
 void cursor_page(editor_t *ed, long pages, int text_rows, bool select)
@@ -316,6 +351,7 @@ void cursor_start(editor_t *ed, bool select)
     ed->cx_col = 0;
     ed->goal_col = 0;
     update_selection(ed, select);
+    editor_sync_to_active(ed);
 }
 
 void cursor_end_doc(editor_t *ed, bool select)
@@ -327,6 +363,7 @@ void cursor_end_doc(editor_t *ed, bool select)
         ed->goal_col = ed->cx_col;
     }
     update_selection(ed, select);
+    editor_sync_to_active(ed);
 }
 
 static void cursor_word_left_single(editor_t *ed, bool select)
@@ -379,6 +416,7 @@ void cursor_word_left(editor_t *ed, bool select)
         ed->extra_count = n;
         editor_merge_cursors(ed);
     }
+    editor_sync_to_active(ed);
 }
 
 static void cursor_word_right_single(editor_t *ed, bool select)
@@ -430,6 +468,7 @@ void cursor_word_right(editor_t *ed, bool select)
         ed->extra_count = n;
         editor_merge_cursors(ed);
     }
+    editor_sync_to_active(ed);
 }
 
 void cursor_select_all(editor_t *ed)
@@ -442,6 +481,7 @@ void cursor_select_all(editor_t *ed)
     ed->cx_col     = cur_line_runes(ed);
     ed->goal_col   = ed->cx_col;
     ed->sel.cursor = (loc_t){ed->cx_line, ed->cx_col};
+    editor_sync_to_active(ed);
 }
 
 void cursor_deselect(editor_t *ed)
@@ -450,6 +490,7 @@ void cursor_deselect(editor_t *ed)
     for (size_t i = 0; i < ed->extra_count; i++) {
         ed->extra_cursors[i].sel.active = false;
     }
+    editor_sync_to_active(ed);
 }
 
 bool selection_get_range(const editor_t *ed, loc_t *start, loc_t *end)
@@ -542,5 +583,6 @@ bool selection_delete(editor_t *ed)
     cursor_clamp(ed);
     ed->sel.active = false;
     ed->dirty = true;
+    editor_sync_to_active(ed);
     return true;
 }

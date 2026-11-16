@@ -8,10 +8,10 @@ LDFLAGS ?=
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
 VERSION := 1.0.0
-PREFIX ?= $(HOME)/.local/dev
+PREFIX ?= $(HOME)/.local
 
-# Look for libtam in $(PREFIX)/lib/pkgconfig if not already in system search path
-export PKG_CONFIG_PATH := $(PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH))
+# Look for libtam in $(HOME)/.local/dev/lib/pkgconfig and $(PREFIX)/lib/pkgconfig if not already in system search path
+export PKG_CONFIG_PATH := $(HOME)/.local/dev/lib/pkgconfig:$(PREFIX)/lib/pkgconfig$(if $(PKG_CONFIG_PATH),:$(PKG_CONFIG_PATH))
 
 # libtam is the only library dependency.
 LIBTAM_CFLAGS := $(shell $(PKG_CONFIG) --cflags libtam 2>/dev/null)

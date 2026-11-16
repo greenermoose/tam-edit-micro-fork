@@ -397,8 +397,11 @@ void edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
     size_t cur_rune = 0;
     size_t last_word_end = 0;
     size_t last_word_rune = 0;
+    int ans_subline = 0;
+    int ans_vx = 0;
+    bool have_ans = false;
 
-    while (i < len && cur_rune < rune_col) {
+    while (i < len) {
         uint32_t cp = 0;
         size_t used = tam_utf8_decode(line + i, len - i, &cp);
         if (used == 0) break;
@@ -413,6 +416,9 @@ void edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
                 subline++;
                 vx = 0;
                 last_word_end = 0;
+                if (cur_rune <= rune_col) {
+                    have_ans = false;
+                }
                 continue;
             } else {
                 subline++;
@@ -421,10 +427,21 @@ void edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
             }
         }
 
+        if (cur_rune == rune_col) {
+            ans_subline = subline;
+            ans_vx = vx;
+            have_ans = true;
+            if (!wordwrap) break;
+        }
+
         if (isspace((unsigned char)cp) || cp == '-' || cp == '_' ||
             cp == '/' || cp == '\\') {
             last_word_end = i + used;
             last_word_rune = cur_rune + 1;
+        }
+
+        if (have_ans && last_word_rune > rune_col) {
+            break;
         }
 
         vx += cw;
@@ -432,8 +449,13 @@ void edit_softwrap_loc_to_vloc(const char *line, size_t len, size_t rune_col,
         cur_rune++;
     }
 
-    if (subline_out != NULL) *subline_out = subline;
-    if (vx_out != NULL) *vx_out = vx;
+    if (!have_ans) {
+        ans_subline = subline;
+        ans_vx = vx;
+    }
+
+    if (subline_out != NULL) *subline_out = ans_subline;
+    if (vx_out != NULL) *vx_out = ans_vx;
 }
 
 size_t edit_softwrap_vloc_to_rune(const char *line, size_t len, int target_subline,
@@ -449,6 +471,8 @@ size_t edit_softwrap_vloc_to_rune(const char *line, size_t len, int target_subli
     size_t cur_rune = 0;
     size_t last_word_end = 0;
     size_t last_word_rune = 0;
+    size_t last_on_target = 0;
+    bool have_on_target = false;
 
     while (i < len) {
         if (subline == target_subline && vx >= target_vx) {
@@ -469,18 +493,30 @@ size_t edit_softwrap_vloc_to_rune(const char *line, size_t len, int target_subli
                 subline++;
                 vx = 0;
                 last_word_end = 0;
-                if (subline > target_subline) return cur_rune;
+                if (subline > target_subline) {
+                    if (have_on_target && last_word_rune > 0) {
+                        return last_word_rune - 1;
+                    }
+                    return cur_rune;
+                }
                 continue;
             } else {
                 subline++;
                 vx = 0;
                 last_word_end = 0;
-                if (subline > target_subline) return cur_rune;
+                if (subline > target_subline) {
+                    return have_on_target ? last_on_target : cur_rune;
+                }
             }
         }
 
         if (subline == target_subline && vx + cw > target_vx) {
             return cur_rune;
+        }
+
+        if (subline == target_subline) {
+            last_on_target = cur_rune;
+            have_on_target = true;
         }
 
         if (isspace((unsigned char)cp) || cp == '-' || cp == '_' ||

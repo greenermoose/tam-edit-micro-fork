@@ -323,6 +323,98 @@ def test_pty_plus_line_col():
     shutil.rmtree(cfg_dir, ignore_errors=True)
     print("[PASS] PTY +LINE:COL startup jump verified")
 
+def _read_pty_until_idle(fd, idle_s=0.15):
+    out = b""
+    while select.select([fd], [], [], idle_s)[0]:
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            break
+        out += chunk
+    return out
+
+def test_pty_arrow_keys():
+    import re
+    for softwrap in (False, True):
+        fpath = "/tmp/tam-arrow-test.txt"
+        long_line = "A" * 90  # wraps into 2 sublines on 80-col terminal
+        with open(fpath, "w", encoding="utf-8") as f:
+            f.write(f"first\n{long_line}\nthird\n")
+
+        cfg_dir = tempfile.mkdtemp(prefix="tam-arrow-cfg-")
+        ini_dir = os.path.join(cfg_dir, "tam-edit")
+        os.makedirs(ini_dir, exist_ok=True)
+        with open(os.path.join(ini_dir, "settings.ini"), "w", encoding="utf-8") as f:
+            f.write(f"[settings]\nsoftwrap = {'true' if softwrap else 'false'}\n")
+
+        env = os.environ.copy()
+        env["TAM_EDIT_CONFIG_HOME"] = cfg_dir
+        env["HOME"] = cfg_dir
+
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(
+            ["./build/tam-edit", fpath],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            env=env,
+            close_fds=True,
+        )
+        os.close(slave)
+
+        try:
+            _read_pty_until_idle(master)
+
+            # Down to line 2
+            os.write(master, b"\x1b[B")
+            out_down1 = _read_pty_until_idle(master)
+            pos1 = re.findall(rb"\x1b\[(\d+);(\d+)H", out_down1)
+            assert pos1 and pos1[-1] == (b"2", b"5"), (
+                f"softwrap={softwrap} Down1 cursor={pos1[-1] if pos1 else None}"
+            )
+
+            # Right 2 chars -> col 3 (screen col 7)
+            os.write(master, b"\x1b[C\x1b[C")
+            out_right = _read_pty_until_idle(master)
+            pos_r = re.findall(rb"\x1b\[(\d+);(\d+)H", out_right)
+            assert pos_r and pos_r[-1] == (b"2", b"7"), (
+                f"softwrap={softwrap} Right2 cursor={pos_r[-1] if pos_r else None}"
+            )
+
+            # Down again: with softwrap, moves to subline 2 of line 2 (row 3);
+            # without softwrap, moves to line 3 (row 3).
+            os.write(master, b"\x1b[B")
+            out_down2 = _read_pty_until_idle(master)
+            pos2 = re.findall(rb"\x1b\[(\d+);(\d+)H", out_down2)
+            assert pos2 and pos2[-1][0] == b"3", (
+                f"softwrap={softwrap} Down2 cursor={pos2[-1] if pos2 else None}"
+            )
+
+            if softwrap:
+                # One more Down moves past wrapped subline 2 to line 3 (row 4)
+                os.write(master, b"\x1b[B")
+                out_down3 = _read_pty_until_idle(master)
+                pos3 = re.findall(rb"\x1b\[(\d+);(\d+)H", out_down3)
+                assert pos3 and pos3[-1][0] == b"4", (
+                    f"softwrap={softwrap} Down3 cursor={pos3[-1] if pos3 else None}"
+                )
+
+            # Up and Left
+            os.write(master, b"\x1b[A\x1b[D")
+            out_up = _read_pty_until_idle(master)
+            pos_u = re.findall(rb"\x1b\[(\d+);(\d+)H", out_up)
+            assert pos_u and pos_u[-1][0] == (b"3" if softwrap else b"2"), (
+                f"softwrap={softwrap} Up+Left cursor={pos_u[-1] if pos_u else None}"
+            )
+
+            os.write(master, b"\x11")  # Ctrl-Q
+            proc.wait(timeout=2)
+        finally:
+            os.close(master)
+            if os.path.exists(fpath):
+                os.remove(fpath)
+            shutil.rmtree(cfg_dir, ignore_errors=True)
+    print("[PASS] PTY arrow keys (softwrap=false and softwrap=true) verified")
+
 if __name__ == "__main__":
     test_cli_version()
     test_cli_config_check()
@@ -331,3 +423,4 @@ if __name__ == "__main__":
     test_pty_splits_and_tabs()
     test_pty_milestone4_commands()
     test_pty_plus_line_col()
+    test_pty_arrow_keys()
