@@ -293,7 +293,7 @@ static void cursor_home_single(editor_t *ed, bool select)
     } else {
         ed->cx_col = first_non_ws;
     }
-    ed->goal_col = ed->cx_col;
+    update_goal_col(ed);
     update_selection(ed, select);
 }
 
@@ -317,7 +317,7 @@ void cursor_home(editor_t *ed, bool select)
 static void cursor_end_single(editor_t *ed, bool select)
 {
     ed->cx_col = cur_line_runes(ed);
-    ed->goal_col = ed->cx_col;
+    update_goal_col(ed);
     update_selection(ed, select);
 }
 
@@ -372,7 +372,7 @@ static void cursor_word_left_single(editor_t *ed, bool select)
         if (ed->cx_line > 0) {
             ed->cx_line--;
             ed->cx_col = cur_line_runes(ed);
-            ed->goal_col = ed->cx_col;
+            update_goal_col(ed);
             update_selection(ed, select);
         }
         return;
@@ -398,7 +398,7 @@ static void cursor_word_left_single(editor_t *ed, bool select)
     }
 
     ed->cx_col = col;
-    ed->goal_col = col;
+    update_goal_col(ed);
     update_selection(ed, select);
 }
 
@@ -426,7 +426,7 @@ static void cursor_word_right_single(editor_t *ed, bool select)
         if (ed->cx_line + 1 < ed->doc.count) {
             ed->cx_line++;
             ed->cx_col = 0;
-            ed->goal_col = 0;
+            update_goal_col(ed);
             update_selection(ed, select);
         }
         return;
@@ -450,7 +450,7 @@ static void cursor_word_right_single(editor_t *ed, bool select)
     }
 
     ed->cx_col = col;
-    ed->goal_col = col;
+    update_goal_col(ed);
     update_selection(ed, select);
 }
 
