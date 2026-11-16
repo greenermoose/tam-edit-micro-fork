@@ -24,7 +24,7 @@ BRANCHES AND STATUS
   master   Go, micro's packages with      make build (Go 1.19+)    Behaviour
            the fork's changes                                      reference,
                                                                    archived
-  c11      src/, a native C11 editor      make (libtam 0.7.0+)     1.0.1:
+  c11      src/, a native C11 editor      make (libtam 0.7.0+)     1.0.2:
                                                                    parity gate,
                                                                    stabilization,
                                                                    packaging
@@ -33,7 +33,7 @@ New work happens on c11. ROADMAP.md holds the phase plan and the milestone
 definitions. The Go tree has been pruned from c11 at 1.0.0 and remains on
 master as the behaviour reference.
 
-Version 1.0.1 (Milestone 5) completes the Phase 7 parity gate: full parity
+Version 1.0.2 (Milestone 5) completes the Phase 7 parity gate: full parity
 audit (docs/PARITY_AUDIT.md), 57 ported VSCode/micro buffer corpus tests,
 large-file/long-line/many-cursor/many-split stress tests, ASan+UBSan fuzz
 harnesses (make fuzz), Section 8 performance verification, man page
@@ -46,7 +46,7 @@ VERSIONING
 tam-edit follows semantic versioning, and while it is below 1.0.0 the
 minor number names a milestone: 0.1.0 is the first daily-usable editor,
 0.2.0 is views and configuration, and 1.0.0 is reserved for the parity gate
-with micro. VERSION in the Makefile is the only source; tam-edit --version
+with micro. VERSION at the repository root is the only source (read by the Makefile); tam-edit --version
 prints it next to the libtam version. The milestone table and the bump
 rules are in ROADMAP.md (Milestones and Versions).
 

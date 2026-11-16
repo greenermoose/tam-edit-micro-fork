@@ -7,7 +7,7 @@ override CFLAGS += -std=c11 -g -Isrc -Idata -D_POSIX_C_SOURCE=200809L -D_GNU_SOU
 LDFLAGS ?=
 
 # Single source of the version. See "Milestones and versions" in ROADMAP.md.
-VERSION := 1.0.1
+VERSION := $(shell tr -d '[:space:]' < VERSION)
 PREFIX ?= $(HOME)/.local
 
 # Look for libtam in $(HOME)/.local/dev/lib/pkgconfig and $(PREFIX)/lib/pkgconfig if not already in system search path
