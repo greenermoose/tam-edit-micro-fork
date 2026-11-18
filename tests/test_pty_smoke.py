@@ -19,9 +19,11 @@ def drain_master(fd, stop_event):
                 break
 
 def test_cli_version():
+    with open("VERSION", "r", encoding="utf-8") as f:
+        expected = f.read().strip()
     proc = subprocess.run(["./build/tam-edit", "--version"], stdout=subprocess.PIPE, text=True)
     assert proc.returncode == 0, f"--version failed with code {proc.returncode}"
-    assert "tam-edit 1.0.3" in proc.stdout, f"Unexpected version output: {proc.stdout}"
+    assert f"tam-edit {expected}" in proc.stdout, f"Unexpected version output: {proc.stdout}"
     print("[PASS] CLI --version output verified")
 
 def test_cli_config_check():
@@ -415,6 +417,44 @@ def test_pty_arrow_keys():
             shutil.rmtree(cfg_dir, ignore_errors=True)
     print("[PASS] PTY arrow keys (softwrap=false and softwrap=true) verified")
 
+def test_pty_delete_word_left():
+    fpath = "/tmp/tam-dwl-pty.txt"
+    with open(fpath, "w", encoding="utf-8") as f:
+        f.write("hello world\n")
+
+    cfg_dir = tempfile.mkdtemp(prefix="tam-dwl-cfg-")
+    env = os.environ.copy()
+    env["TAM_EDIT_CONFIG_HOME"] = cfg_dir
+
+    master, slave = pty.openpty()
+    proc = subprocess.Popen(
+        ["./build/tam-edit", "+1:12", fpath],
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        env=env,
+        close_fds=True,
+    )
+    os.close(slave)
+
+    try:
+        _read_pty_until_idle(master)
+        os.write(master, b"\x1b\x7f")  # Alt-Backspace -> DeleteWordLeft
+        _read_pty_until_idle(master)
+        os.write(master, b"\x13")      # Ctrl-S
+        _read_pty_until_idle(master)
+        os.write(master, b"\x11")      # Ctrl-Q
+        proc.wait(timeout=2)
+        with open(fpath, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert content == "hello \n", f"Unexpected content after Alt-Backspace: {content!r}"
+    finally:
+        os.close(master)
+        if os.path.exists(fpath):
+            os.remove(fpath)
+        shutil.rmtree(cfg_dir, ignore_errors=True)
+    print("[PASS] PTY DeleteWordLeft (Alt-Backspace) verified")
+
 if __name__ == "__main__":
     test_cli_version()
     test_cli_config_check()
@@ -424,3 +464,4 @@ if __name__ == "__main__":
     test_pty_milestone4_commands()
     test_pty_plus_line_col()
     test_pty_arrow_keys()
+    test_pty_delete_word_left()

@@ -1178,7 +1178,8 @@ typedef enum {
     MC_OP_TEXT,
     MC_OP_NEWLINE,
     MC_OP_BACKSPACE,
-    MC_OP_DELETE
+    MC_OP_DELETE,
+    MC_OP_DELETE_WORD_LEFT
 } mc_op_kind_t;
 
 typedef struct {
@@ -1356,6 +1357,37 @@ static void backspace_single(editor_t *ed)
     ed->goal_col = ed->cx_col;
 }
 
+static void delete_word_left_single(editor_t *ed)
+{
+    if (ed->sel.active) {
+        selection_delete(ed);
+        return;
+    }
+    if (ed->cx_col == 0) {
+        backspace_single(ed);
+        return;
+    }
+
+    size_t orig_col = ed->cx_col;
+    cursor_word_left_single(ed, false);
+    size_t new_col = ed->cx_col;
+    if (new_col < orig_col) {
+        size_t runes = orig_col - new_col;
+        const char *l_str = ed->doc.lines[ed->cx_line];
+        size_t l_len = ed->doc.lens[ed->cx_line];
+        size_t b_start = edit_rune_to_byte(l_str, l_len, new_col);
+        size_t b_end   = edit_rune_to_byte(l_str, l_len, orig_col);
+
+        ed->cx_col = orig_col;
+        undo_record_remove(ed, ed->cx_line, new_col,
+                           l_str + b_start, b_end - b_start);
+        undo_clear_redo(ed);
+
+        editor_raw_remove(ed, ed->cx_line, new_col, runes);
+        ed->cx_col = new_col;
+    }
+}
+
 static void delete_single(editor_t *ed)
 {
     if (ed->sel.active) {
@@ -1432,8 +1464,9 @@ static void multi_edit_apply(editor_t *ed, mc_op_kind_t op,
         case MC_OP_CODEPOINT: insert_codepoint_single(ed, cp); break;
         case MC_OP_TEXT:      insert_text_single(ed, text, len); break;
         case MC_OP_NEWLINE:   insert_newline_single(ed); break;
-        case MC_OP_BACKSPACE: backspace_single(ed); break;
-        case MC_OP_DELETE:    delete_single(ed); break;
+        case MC_OP_BACKSPACE:        backspace_single(ed); break;
+        case MC_OP_DELETE:           delete_single(ed); break;
+        case MC_OP_DELETE_WORD_LEFT: delete_word_left_single(ed); break;
         }
 
         items[k].c.cx_line  = ed->cx_line;
@@ -1552,6 +1585,17 @@ void editor_backspace(editor_t *ed)
         return;
     }
     backspace_single(ed);
+    touch(ed);
+}
+
+void editor_delete_word_left(editor_t *ed)
+{
+    if (!check_writable(ed)) return;
+    if (ed->extra_count > 0) {
+        multi_edit_apply(ed, MC_OP_DELETE_WORD_LEFT, 0, NULL, 0);
+        return;
+    }
+    delete_word_left_single(ed);
     touch(ed);
 }
 

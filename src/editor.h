@@ -237,6 +237,7 @@ void editor_insert_text(editor_t *ed, const char *text, size_t len);
 void editor_insert_newline(editor_t *ed);
 void editor_insert_tab(editor_t *ed);
 void editor_backspace(editor_t *ed);
+void editor_delete_word_left(editor_t *ed);
 void editor_delete(editor_t *ed);
 
 /* Cursor & motion compatibility helpers */

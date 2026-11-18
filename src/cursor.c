@@ -366,7 +366,7 @@ void cursor_end_doc(editor_t *ed, bool select)
     editor_sync_to_active(ed);
 }
 
-static void cursor_word_left_single(editor_t *ed, bool select)
+void cursor_word_left_single(editor_t *ed, bool select)
 {
     if (ed->cx_col == 0) {
         if (ed->cx_line > 0) {

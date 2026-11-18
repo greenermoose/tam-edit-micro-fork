@@ -57,31 +57,7 @@ static void act_insert_tab(editor_t *ed)     { editor_insert_tab(ed); }
 static void act_backspace(editor_t *ed)      { editor_backspace(ed); }
 static void act_delete(editor_t *ed)         { editor_delete(ed); }
 
-static void act_delete_word_left(editor_t *ed)
-{
-    if (ed->active_view && ed->active_view->buf && ed->active_view->buf->readonly) {
-        editor_set_message(ed, "Buffer is read-only");
-        return;
-    }
-    if (ed->sel.active) {
-        selection_delete(ed);
-        return;
-    }
-    size_t orig_line = ed->cx_line;
-    size_t orig_col  = ed->cx_col;
-    cursor_word_left(ed, false);
-    if (ed->cx_line == orig_line && ed->cx_col < orig_col) {
-        size_t runes = orig_col - ed->cx_col;
-        const char *l_str = ed->doc.lines[orig_line];
-        size_t l_len = ed->doc.lens[orig_line];
-        size_t b_start = edit_rune_to_byte(l_str, l_len, ed->cx_col);
-        size_t b_end   = edit_rune_to_byte(l_str, l_len, orig_col);
-        undo_record_remove(ed, orig_line, ed->cx_col, l_str + b_start, b_end - b_start);
-        undo_clear_redo(ed);
-        editor_raw_remove(ed, orig_line, ed->cx_col, runes);
-        ed->dirty = true;
-    }
-}
+static void act_delete_word_left(editor_t *ed) { editor_delete_word_left(ed); }
 
 static void copy_cursor_text(const editor_t *ed, tam_str_t *out)
 {

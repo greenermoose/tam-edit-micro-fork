@@ -10,6 +10,7 @@ void  cursor_end(editor_t *ed, bool select);
 void  cursor_page(editor_t *ed, long pages, int text_rows, bool select);
 void  cursor_start(editor_t *ed, bool select);
 void  cursor_end_doc(editor_t *ed, bool select);
+void  cursor_word_left_single(editor_t *ed, bool select);
 void  cursor_word_left(editor_t *ed, bool select);
 void  cursor_word_right(editor_t *ed, bool select);
 

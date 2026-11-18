@@ -279,6 +279,103 @@ static void test_multicursor_and_line_ops(void)
     printf("  [PASS] test_multicursor_and_line_ops\n");
 }
 
+static void test_delete_word_left(void)
+{
+    editor_t ed;
+    editor_init(&ed);
+
+    /* 1. Single-cursor mid-line UTF-8 deletion and undo/redo */
+    editor_insert_text(&ed, "caf\xc3\xa9 latte", 11);
+    CHECK(ed.cx_line == 0 && ed.cx_col == 10);
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(strcmp(ed.doc.lines[0], "caf\xc3\xa9 ") == 0);
+    CHECK(ed.cx_col == 5);
+    CHECK(ed.dirty);
+
+    CHECK(editor_undo(&ed));
+    CHECK(strcmp(ed.doc.lines[0], "caf\xc3\xa9 latte") == 0);
+    CHECK(ed.cx_col == 10);
+    CHECK(editor_redo(&ed));
+    CHECK(strcmp(ed.doc.lines[0], "caf\xc3\xa9 ") == 0);
+
+    /* 2. Column 0 joins with previous line; (0,0) is a no-op */
+    ed.doc.lines[0][0] = '\0';
+    ed.doc.lens[0] = 0;
+    ed.cx_line = 0;
+    ed.cx_col = 0;
+    editor_insert_text(&ed, "first\nsecond", 12);
+    ed.cx_line = 1;
+    ed.cx_col = 0;
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(ed.doc.count == 1);
+    CHECK(strcmp(ed.doc.lines[0], "firstsecond") == 0);
+    CHECK(ed.cx_line == 0 && ed.cx_col == 5);
+
+    ed.cx_line = 0;
+    ed.cx_col = 0;
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(strcmp(ed.doc.lines[0], "firstsecond") == 0);
+    CHECK(ed.cx_line == 0 && ed.cx_col == 0);
+
+    /* 3. Multi-cursor across multiple lines + single undo */
+    editor_free(&ed);
+    editor_init(&ed);
+    editor_insert_text(&ed, "alpha one\nbeta two\ngamma three", 30);
+    ed.cx_line = 0;
+    ed.cx_col = 9;
+    actions_execute(&ed, "SpawnMultiCursorDown");
+    actions_execute(&ed, "SpawnMultiCursorDown");
+    ed.extra_cursors[0].cx_col = 8;
+    ed.extra_cursors[1].cx_col = 11;
+    CHECK(ed.extra_count == 2);
+
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(strcmp(ed.doc.lines[0], "alpha ") == 0);
+    CHECK(strcmp(ed.doc.lines[1], "beta ") == 0);
+    CHECK(strcmp(ed.doc.lines[2], "gamma ") == 0);
+    CHECK(ed.cx_col == 6);
+    CHECK(ed.extra_count == 2);
+    CHECK(ed.extra_cursors[0].cx_col == 5);
+    CHECK(ed.extra_cursors[1].cx_col == 6);
+
+    CHECK(editor_undo(&ed));
+    CHECK(strcmp(ed.doc.lines[0], "alpha one") == 0);
+    CHECK(strcmp(ed.doc.lines[1], "beta two") == 0);
+    CHECK(strcmp(ed.doc.lines[2], "gamma three") == 0);
+
+    /* 4. Multi-cursor on the same line */
+    actions_execute(&ed, "RemoveAllMultiCursors");
+    ed.cx_line = 0;
+    ed.cx_col = 5; /* "alpha| one" */
+    ed.extra_cursors[0] = (cursor_t){0, 9, 9, {{0, 0}, {0, 0}, false}}; /* "alpha one|" */
+    ed.extra_count = 1;
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(strcmp(ed.doc.lines[0], " ") == 0);
+
+    /* 5. Active selection deletion + read-only guard */
+    actions_execute(&ed, "RemoveAllMultiCursors");
+    ed.cx_line = 0;
+    ed.cx_col = 0;
+    ed.sel.active = true;
+    ed.sel.anchor = (loc_t){0, 0};
+    ed.sel.cursor = (loc_t){1, 5};
+    actions_execute(&ed, "DeleteWordLeft");
+    CHECK(ed.doc.count == 2);
+    CHECK(strcmp(ed.doc.lines[0], "two") == 0);
+
+    if (ed.active_view && ed.active_view->buf) {
+        ed.active_view->buf->readonly = true;
+        ed.cx_line = 0;
+        ed.cx_col = 3;
+        actions_execute(&ed, "DeleteWordLeft");
+        CHECK(strcmp(ed.doc.lines[0], "two") == 0);
+        ed.active_view->buf->readonly = false;
+    }
+
+    editor_free(&ed);
+    printf("  [PASS] test_delete_word_left\n");
+}
+
 static void test_shell_commands_and_completion(void)
 {
     char cfg_dir[256];
@@ -388,6 +485,7 @@ int run_milestone4_tests(void)
     test_incsearch_and_hlsearch();
     test_encodings_roundtrip();
     test_multicursor_and_line_ops();
+    test_delete_word_left();
     test_shell_commands_and_completion();
     printf("All Milestone 4 tests passed.\n");
     return 0;
