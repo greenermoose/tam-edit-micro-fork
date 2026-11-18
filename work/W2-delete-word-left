@@ -1,0 +1,42 @@
+W2 DELETE WORD LEFT THROUGH EDIT PIPELINE
+
+Date: 2026-11-18
+AI harness: Antigravity CLI 1.5.11
+AI model: Gemini 4 Hydrogen (Medium)
+Commits: 61cc02c0
+
+
+GUIDANCE
+
+  Fred: "/plan Do the next work for tam-edit."
+  Fred selected:
+  - Fix Finding #3 of reviews/review-001.md (act_delete_word_left) only.
+  - At column 0 (cx_line > 0), delete the newline / join with the
+    previous line, matching Backspace and upstream micro.
+
+
+DONE
+
+  - Exposed cursor_word_left_single in src/cursor.h / src/cursor.c.
+  - Added MC_OP_DELETE_WORD_LEFT, delete_word_left_single, and
+    editor_delete_word_left in src/editor.h / src/editor.c;
+    act_delete_word_left in src/actions.c now delegates to it.
+  - Recorded undo delta at orig_col before moving the cursor so undo
+    restores the pre-delete column.
+  - Added unit/multi-cursor/undo/selection/readonly tests in
+    tests/test_milestone4.c (test_delete_word_left) and PTY
+    Alt-Backspace test in tests/test_pty_smoke.py; updated
+    test_cli_version to read VERSION.
+  - Bumped VERSION to 1.0.4; make test, make test-asan, make test-pty
+    (with TAM_EDIT_CONFIG_HOME unset), and make check-deps all passed.
+
+
+FAILED
+
+  - Nothing.
+
+
+HANDOFF
+
+  - Remaining open findings in reviews/review-001.md, starting with #2
+    (edit_visual_col / edit_visual_to_rune fixed tabstop). See WHATNOW.

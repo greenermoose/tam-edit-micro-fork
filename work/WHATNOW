@@ -3,34 +3,32 @@ WHATNOW
 What tam-edit is doing now and what comes next. Read this first; revise
 it at the end of every session (work/README-work).
 
-Updated: 2026-11-17, with W1
+Updated: 2026-11-18, with W2
 
 
 STATE
 
   tam-edit is Fred's fork of micro, rewritten in C11 so it links only
   libtam and the C library. The C11 editor lives on branch c11, pushed;
-  the Go version stays on master. VERSION reads 1.0.3 (the footer shows
+  the Go version stays on master. VERSION reads 1.0.4 (the footer shows
   it).
 
   All five migration milestones are complete (ROADMAP.md, 1.0.0 on
   2026-11-13): editing, views and configuration, syntax highlighting,
   search, encodings, shell, multi-cursor, the parity audit
   (docs/PARITY_AUDIT.md), fuzzing and packaging. Since then: fixes to
-  arrow keys, softwrap boundaries, the softwrap goal column, and the
-  version in the footer.
+  arrow keys, softwrap boundaries, the softwrap goal column, the version
+  in the footer, and DeleteWordLeft (W2, 61cc02c0).
 
   reviews/review-001.md, a review of the cursor code, found eight
-  issues. Only the first, the softwrap goal column after Home, End and
-  word moves, is fixed (880cbe4e).
+  issues. #1 (softwrap goal column after Home/End/word moves, 880cbe4e)
+  and #3 (act_delete_word_left multi-cursor and edit pipeline, 61cc02c0)
+  are fixed.
 
 
 NEXT
 
   1. The open findings of reviews/review-001.md, highest impact first:
-     - 3: act_delete_word_left (src/actions.c) moves every cursor but
-       deletes once, and bypasses the edit pipeline. Make it a real edit
-       through the single and multi-cursor path, like Backspace.
      - 2: edit_visual_col and edit_visual_to_rune (src/editor.c) use a
        fixed tab stop of 8 (EDIT_TABSTOP); rendering uses
        config.tabsize. Pass the tab size in.

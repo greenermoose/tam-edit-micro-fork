@@ -30,7 +30,7 @@ Architecture summary relevant to cursor movement:
 - **Effect:** any feature relying on these helpers (e.g. non-wrapped horizontal scrolling/visual positioning paths that use `edit_visual_col`, prompt/cursor visuals where used, or future code) disagrees with displayed layout when `tabsize != 8`, causing cursor/scroll misalignment.
 - **Fix:** make visual-column helpers accept `tabsize` (or read config/context) and use it consistently; avoid a hardcoded global tabstop for display math.
 
-### 3. `act_delete_word_left` is not multi-cursor-safe and bypasses the edit pipeline (medium-high)
+### 3. `act_delete_word_left` is not multi-cursor-safe and bypasses the edit pipeline (medium-high) — **FIXED (`61cc02c0`)**
 - `act_delete_word_left` computes a word boundary by calling `cursor_word_left(ed, false)` (which moves **all** cursors and merges, `actions.c:72`, `cursor.c:405-420`), then deletes only on the primary cursor/range if same line (`actions.c:73-84`) using raw record/remove/touch-like state updates.
 - **Effect:** with extra cursors it relocates every cursor but deletes only once at the primary's old position; with selections spanning lines it does nothing useful; it also doesn't go through `check_writable`/multi-edit grouping semantics the way normal edits do. Behavior is inconsistent with `Backspace`/`Delete` multi-cursor handling (`editor.c:1548-1567`).
 - **Fix:** implement as an edit operation (select-word-left range per cursor + delete) dispatched through the same single/multi-cursor path as other destructive edits, or at least apply per-cursor and preserve invariants.
